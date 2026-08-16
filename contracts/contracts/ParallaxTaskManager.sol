@@ -36,7 +36,7 @@ contract ParallaxTaskManager {
     mapping(bytes32 => Task) public tasks;
     mapping(bytes32 => Subtask) public subtasks;
 
-    event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget);
+    event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget, string description);
     event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward, uint256 leaseDuration);
     event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker);
     event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, bytes32 submissionHash);
@@ -77,7 +77,7 @@ contract ParallaxTaskManager {
         });
 
         escrow.deposit{value: msg.value}(taskId);
-        emit TaskCreated(taskId, msg.sender, totalReward);
+        emit TaskCreated(taskId, msg.sender, totalReward, description);
 
         for (uint i = 0; i < subtasksInputs.length; i++) {
             bytes32 subtaskId = keccak256(abi.encodePacked(taskId, i));

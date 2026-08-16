@@ -49,7 +49,7 @@ export async function setupChainListeners() {
         
         try {
           if (event.eventName === "TaskCreated") {
-            const [taskId, creator, budget] = event.args;
+            const [taskId, creator, budget, description] = event.args;
             console.log(`Event TaskCreated: ${taskId}`);
             await prisma.task.upsert({
               where: { taskId: taskId },
@@ -57,7 +57,7 @@ export async function setupChainListeners() {
               create: {
                 taskId: taskId,
                 creator: creator,
-                description: "Task from chain event",
+                description: description,
                 budget: ethers.formatEther(budget),
                 status: "ACTIVE"
               }
