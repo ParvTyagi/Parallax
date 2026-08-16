@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useWeb3 } from "../contexts/Web3Context";
 import { ethers } from "ethers";
-import { CheckCircle2, Clock, PlayCircle, Search, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Clock, Search, ShieldCheck } from "lucide-react";
 import { API_URL } from "../lib/constants";
 
 const TaskDetail = () => {
