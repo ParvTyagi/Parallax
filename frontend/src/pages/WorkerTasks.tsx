@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useWeb3 } from "../contexts/Web3Context";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/Tabs";
+import { API_URL } from "../lib/constants";
 
 const WorkerTasks = () => {
   const { account, signer, taskManager, connectWallet } = useWeb3();
@@ -28,7 +29,7 @@ const WorkerTasks = () => {
 
   const fetchSubtasks = async () => {
     try {
-      const res = await fetch("http://localhost:3000/api/tasks/open-subtasks");
+      const res = await fetch(`${API_URL}/api/tasks/open-subtasks`);
       const data = await res.json();
       setSubtasks(data);
     } catch (e) {
@@ -40,7 +41,7 @@ const WorkerTasks = () => {
 
   const fetchMyTasks = async (walletAddress: string) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/tasks/worker/${walletAddress}`);
+      const res = await fetch(`${API_URL}/api/tasks/worker/${walletAddress}`);
       const data = await res.json();
       setMyTasks(data);
     } catch (e) {

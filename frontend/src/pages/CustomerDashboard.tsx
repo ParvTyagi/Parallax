@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useWeb3 } from "../contexts/Web3Context";
 import { ethers } from "ethers";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/Tabs";
+import { API_URL } from "../lib/constants";
 
 const CustomerDashboard = () => {
   const { account, signer, taskManager, connectWallet } = useWeb3();
@@ -32,7 +33,7 @@ const CustomerDashboard = () => {
 
   const fetchCustomerTasks = async (walletAddress: string) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/tasks/customer/${walletAddress}`);
+      const res = await fetch(`${API_URL}/api/tasks/customer/${walletAddress}`);
       if (res.ok) {
         const data = await res.json();
         setMyTasks(data);
@@ -52,7 +53,7 @@ const CustomerDashboard = () => {
     setIsProcessing(true);
     try {
       setStatusText("AI is analyzing and decomposing the master task...");
-      const res = await fetch("http://localhost:3000/api/decompose", {
+      const res = await fetch(`${API_URL}/api/decompose`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description, budget })

@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useWeb3 } from "../contexts/Web3Context";
 import { ethers } from "ethers";
 import { CheckCircle2, Clock, PlayCircle, Search, ShieldCheck } from "lucide-react";
+import { API_URL } from "../lib/constants";
 
 const TaskDetail = () => {
   const { taskId } = useParams();
@@ -14,7 +15,7 @@ const TaskDetail = () => {
 
   const fetchTask = async () => {
     try {
-      const res = await fetch(`http://localhost:3000/api/tasks/${taskId}`);
+      const res = await fetch(`${API_URL}/api/tasks/${taskId}`);
       if (res.ok) {
         const data = await res.json();
         setTask(data);
@@ -67,7 +68,7 @@ const TaskDetail = () => {
       console.log(`[TaskDetail] Transaction successfully mined on-chain!`);
 
       console.log(`[TaskDetail] Saving submission to off-chain DB...`);
-      const res = await fetch("http://localhost:3000/api/submissions", {
+      const res = await fetch(`${API_URL}/api/submissions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subtaskId, worker: account, content })
@@ -77,7 +78,7 @@ const TaskDetail = () => {
       if (!res.ok) throw new Error(data.error || "Submission failed");
 
       console.log(`[TaskDetail] Triggering AI Orchestrator API for verification...`);
-      fetch("http://localhost:3000/api/orchestrator/trigger-verification", {
+      fetch(`${API_URL}/api/orchestrator/trigger-verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subtaskId })
