@@ -11,6 +11,11 @@ const config: HardhatUserConfig = {
       url: process.env.MONAD_RPC_URL || "",
       chainId: process.env.MONAD_CHAIN_ID ? parseInt(process.env.MONAD_CHAIN_ID) : 10143,
       accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : []
+    },
+    monadMainnet: {
+      url: process.env.MONAD_MAINNET_RPC_URL || "https://rpc.monad.xyz",
+      chainId: process.env.MONAD_MAINNET_CHAIN_ID ? parseInt(process.env.MONAD_MAINNET_CHAIN_ID) : 10143,
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : []
     }
   }
 };

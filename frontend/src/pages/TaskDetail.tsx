@@ -183,24 +183,27 @@ const TaskDetail = () => {
           
           {task.subtasks.map((st: any) => {
             const isVerified = st.state === 'VERIFIED';
-            const isSubmitted = st.submissions && st.submissions.length > 0 && !isVerified;
-            const isClaimed = st.state === 'CLAIMED' || st.state === 'SUBMITTED' || (st.worker && !isSubmitted && !isVerified);
+            const isRejected = st.state === 'REJECTED';
+            const isSubmitted = st.state === 'SUBMITTED';
+            const isClaimed = st.state === 'CLAIMED' || st.state === 'SUBMITTED' || (st.worker && !isSubmitted && !isVerified && !isRejected);
             
             const isMyTask = account && st.worker && st.worker.toLowerCase() === account.toLowerCase();
 
             return (
               <div key={st.subtaskId} className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all hover:border-gray-300 shadow-sm">
-                <div className={`p-5 flex justify-between items-start border-b ${isVerified ? 'border-gray-100 bg-emerald-50/10' : 'border-gray-100'}`}>
+                <div className={`p-5 flex justify-between items-start border-b ${isVerified ? 'border-gray-100 bg-emerald-50/10' : isRejected ? 'border-red-100 bg-red-50/10' : 'border-gray-100'}`}>
                   <div>
                     <div className="flex items-center gap-3 mb-2">
                       {isVerified ? (
                         <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">✓ VERIFIED</span>
+                      ) : isRejected ? (
+                        <span className="bg-red-50 text-red-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">✗ FAILED (RETRY)</span>
                       ) : isSubmitted ? (
                         <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> AI VERIFYING</span>
                       ) : isClaimed ? (
-                        <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1"><PlayCircle className="w-3 h-3" /> IN PROGRESS</span>
+                        <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">IN PROGRESS</span>
                       ) : (
-                        <span className="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded">AVAILABLE</span>
+                        <span className="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">AVAILABLE</span>
                       )}
                       
                       <span className="text-xs font-bold text-black">{st.rangeLabel}</span>

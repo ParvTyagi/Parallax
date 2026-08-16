@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const TASK_MANAGER_ABI = [
-  "event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget)",
+  "event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget, string description)",
   "event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward, uint256 leaseDuration)",
   "event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker)",
   "event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId)",
@@ -110,7 +110,7 @@ export async function setupChainListeners() {
             await prisma.subtask.updateMany({
               where: { subtaskId: subtaskId },
               data: { 
-                state: passed ? "VERIFIED" : "CREATED",
+                state: passed ? "VERIFIED" : "REJECTED",
                 worker: passed ? undefined : null,
                 qualityScore: Number(score)
               }
