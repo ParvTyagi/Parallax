@@ -6,11 +6,15 @@ dotenv.config();
 
 const TASK_MANAGER_ABI = [
   "event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget)",
-  "event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward)",
+  "event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward, uint256 leaseDuration)",
   "event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker)",
+  "event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId)",
   "event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, bytes32 submissionHash)",
   "event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score)"
 ];
+
+// We will simulate AI aggregation off-chain here when all tasks are verified.
+import { geminiModel } from "./gemini";
 
 export async function setupChainListeners() {
   const rpcUrl = process.env.MONAD_RPC_URL;
@@ -60,7 +64,7 @@ export async function setupChainListeners() {
             });
           }
           else if (event.eventName === "SubtaskCreated") {
-            const [taskId, subtaskId, rangeLabel, description, reward] = event.args;
+            const [taskId, subtaskId, rangeLabel, description, reward, leaseDuration] = event.args;
             console.log(`Event SubtaskCreated: ${subtaskId}`);
             await prisma.subtask.upsert({
               where: { subtaskId: subtaskId },
@@ -71,6 +75,7 @@ export async function setupChainListeners() {
                 rangeLabel: rangeLabel,
                 description: description,
                 reward: ethers.formatEther(reward),
+                leaseDuration: Number(leaseDuration),
                 state: "CREATED"
               }
             });
@@ -81,6 +86,14 @@ export async function setupChainListeners() {
             await prisma.subtask.updateMany({
               where: { subtaskId: subtaskId },
               data: { state: "CLAIMED", worker: worker }
+            });
+          }
+          else if (event.eventName === "ClaimForfeited") {
+            const [taskId, subtaskId] = event.args;
+            console.log(`Event ClaimForfeited: ${subtaskId}`);
+            await prisma.subtask.updateMany({
+              where: { subtaskId: subtaskId },
+              data: { state: "CREATED", worker: null }
             });
           }
           else if (event.eventName === "SubmissionProofRecorded") {
@@ -97,10 +110,48 @@ export async function setupChainListeners() {
             await prisma.subtask.updateMany({
               where: { subtaskId: subtaskId },
               data: { 
-                state: passed ? "VERIFIED" : "REJECTED",
+                state: passed ? "VERIFIED" : "CREATED",
+                worker: passed ? undefined : null,
                 qualityScore: Number(score)
               }
             });
+
+            // Check if master task is complete for aggregation
+            if (passed) {
+              const task = await prisma.task.findUnique({
+                where: { taskId: taskId },
+                include: { subtasks: { include: { submissions: { orderBy: { createdAt: 'desc' }, take: 1 } } } }
+              });
+
+              if (task) {
+                const allVerified = task.subtasks.every(st => st.state === "VERIFIED");
+                if (allVerified && task.status !== "COMPLETED") {
+                  console.log(`[Aggregation] All subtasks verified for task ${taskId}! Triggering aggregation...`);
+                  
+                  // Gather all submissions
+                  const allWork = task.subtasks.map(st => `[Subtask: ${st.description}]\nWorker Output: ${st.submissions[0]?.storagePath || "No data"}\n`).join("\n");
+                  
+                  const prompt = `You are a synthesis AI. We have a master task: "${task.description}".
+The workers have completed the subtasks. Here are their submissions:
+${allWork}
+
+Synthesize these submissions into a single cohesive, well-formatted final solution for the master task. Return ONLY the final output markdown text.`;
+
+                  try {
+                    const aiResult = await geminiModel.generateContent(prompt);
+                    const finalSolution = aiResult.response.text().trim();
+                    
+                    await prisma.task.update({
+                      where: { taskId: taskId },
+                      data: { status: "COMPLETED", solution: finalSolution }
+                    });
+                    console.log(`[Aggregation] Task ${taskId} successfully aggregated and marked COMPLETED.`);
+                  } catch (aggErr) {
+                    console.error("[Aggregation] Failed to aggregate solution:", aggErr);
+                  }
+                }
+              }
+            }
           }
         } catch (dbError) {
           console.error("DB Update Error during event sync:", dbError);

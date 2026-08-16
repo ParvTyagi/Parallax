@@ -1,6 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { ethers } from 'ethers';
 import { TASK_MANAGER_ADDRESS, TASK_MANAGER_ABI } from '../lib/constants';
+
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
 
 interface Web3ContextType {
   account: string | null;

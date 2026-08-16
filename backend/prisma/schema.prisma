@@ -14,6 +14,7 @@ model Task {
   description String
   budget      String
   status      String    // "PENDING", "ACTIVE", "COMPLETED"
+  solution    String?   @db.Text
   createdAt   DateTime  @default(now())
   subtasks    Subtask[]
 }
@@ -25,6 +26,7 @@ model Subtask {
   rangeLabel     String
   description    String
   reward         String
+  leaseDuration  Int?         // dynamic lease in seconds
   worker         String?
   state          String       // "CREATED", "CLAIMED", "SUBMITTED", "VERIFIED", "REJECTED"
   submissionHash String?

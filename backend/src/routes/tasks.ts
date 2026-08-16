@@ -18,6 +18,40 @@ router.get("/open-subtasks", async (req, res) => {
   }
 });
 
+// Get all tasks created by a specific customer
+router.get("/customer/:address", async (req, res) => {
+  try {
+    const { address } = req.params;
+    const tasks = await prisma.task.findMany({
+      where: { creator: address },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        subtasks: true
+      }
+    });
+    res.json(tasks);
+  } catch (error) {
+    console.error("Error fetching customer tasks:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get all subtasks claimed by a specific worker
+router.get("/worker/:address", async (req, res) => {
+  try {
+    const { address } = req.params;
+    const subtasks = await prisma.subtask.findMany({
+      where: { worker: address },
+      orderBy: { createdAt: 'desc' },
+      include: { task: true }
+    });
+    res.json(subtasks);
+  } catch (error) {
+    console.error("Error fetching worker tasks:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Get a specific task and its full state for the execution visualizer
 router.get("/:taskId", async (req, res) => {
   try {

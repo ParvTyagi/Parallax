@@ -13,10 +13,15 @@ const TASK_MANAGER_ABI = [
 ];
 
 router.post("/trigger-verification", async (req, res) => {
+  console.log(`\n\n[Orchestrator] POST /trigger-verification called with body:`, req.body);
   try {
     const { subtaskId } = req.body;
-    if (!subtaskId) return res.status(400).json({ error: "Missing subtaskId" });
+    if (!subtaskId) {
+      console.error("[Orchestrator] Missing subtaskId in request");
+      return res.status(400).json({ error: "Missing subtaskId" });
+    }
 
+    console.log(`[Orchestrator] Fetching subtask ${subtaskId} from database...`);
     // Fetch the subtask and latest submission
     const subtask = await prisma.subtask.findUnique({
       where: { subtaskId },
@@ -24,11 +29,13 @@ router.post("/trigger-verification", async (req, res) => {
     });
 
     if (!subtask || subtask.submissions.length === 0) {
+      console.error(`[Orchestrator] Subtask or submission not found for ID: ${subtaskId}`);
       return res.status(404).json({ error: "Subtask or submission not found" });
     }
 
     const submission = subtask.submissions[0];
     const workerSubmission = submission.storagePath; // Content stored here for MVP
+    console.log(`[Orchestrator] Found worker submission (length: ${workerSubmission.length})`);
 
     // AI Verification
     const prompt = `
@@ -48,10 +55,19 @@ Return ONLY valid JSON:
 }
 `;
 
+    console.log(`[Orchestrator] Calling Gemini AI for verification...`);
     const aiResult = await geminiModel.generateContent(prompt);
     const text = aiResult.response.text().trim().replace(/```json/g, "").replace(/```/g, "");
+    console.log(`[Orchestrator] Gemini AI responded:\n`, text);
     
-    const parsedJson = JSON.parse(text);
+    let parsedJson;
+    try {
+      parsedJson = JSON.parse(text);
+    } catch (e) {
+      console.error(`[Orchestrator] Failed to parse AI JSON response:`, text);
+      throw new Error("AI returned invalid JSON");
+    }
+    
     const passed = parsedJson.passed === true;
     const score = parsedJson.score || 0;
 
@@ -61,29 +77,38 @@ Return ONLY valid JSON:
     const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
 
     if (rpcUrl && pk && taskManagerAddress) {
+      console.log(`[Orchestrator] Preparing to sign transaction on Monad Testnet...`);
       const provider = new ethers.JsonRpcProvider(rpcUrl);
       const wallet = new ethers.Wallet(pk, provider);
       const contract = new ethers.Contract(taskManagerAddress, TASK_MANAGER_ABI, wallet);
 
-      console.log(`Orchestrator calling verifySubtask on-chain for ${subtaskId} with pass=${passed}`);
-      const tx = await contract.verifySubtask(
-        subtask.taskId,
-        subtaskId,
-        passed,
-        score
-      );
-      await tx.wait();
-      console.log(`Orchestrator TX Confirmed: ${tx.hash}`);
+      console.log(`[Orchestrator] Calling verifySubtask on-chain for ${subtaskId} with pass=${passed}, score=${score}...`);
+      try {
+        const tx = await contract.verifySubtask(
+          subtask.taskId,
+          subtaskId,
+          passed,
+          score,
+          { gasLimit: 3000000 } // Add manual gas limit to prevent estimation crashes
+        );
+        console.log(`[Orchestrator] Transaction broadcasted! Hash: ${tx.hash}`);
+        console.log(`[Orchestrator] Waiting for transaction to be mined...`);
+        await tx.wait();
+        console.log(`[Orchestrator] TX Mined and Confirmed!`);
+      } catch (txError) {
+        console.error(`[Orchestrator] CRITICAL ERROR: Smart Contract execution reverted!`, txError);
+      }
     } else {
-      console.warn("Orchestrator credentials missing. Skipping on-chain verification transaction.");
+      console.warn("[Orchestrator] Credentials missing. Skipping on-chain verification transaction.");
     }
 
+    console.log(`[Orchestrator] Sending success response to frontend.`);
     res.json({
       success: true,
       aiEvaluation: parsedJson
     });
   } catch (error) {
-    console.error("Error in orchestrator verification:", error);
+    console.error("[Orchestrator] Error in orchestrator verification catch block:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -29,16 +29,19 @@ contract ParallaxTaskManager {
         bytes32 submissionHash;
         uint8 score;
         bool exists;
+        uint256 leaseDuration;
+        uint256 claimTime;
     }
 
     mapping(bytes32 => Task) public tasks;
     mapping(bytes32 => Subtask) public subtasks;
 
     event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget);
-    event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward);
+    event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward, uint256 leaseDuration);
     event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker);
     event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, bytes32 submissionHash);
     event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score);
+    event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId);
 
     modifier onlyOrchestrator() {
         require(msg.sender == orchestrator, "Only orchestrator can call this");
@@ -54,6 +57,7 @@ contract ParallaxTaskManager {
         string rangeLabel;
         string description;
         uint256 reward;
+        uint256 leaseDuration;
     }
 
     function createTask(string memory description, SubtaskInput[] memory subtasksInputs) external payable {
@@ -84,28 +88,12 @@ contract ParallaxTaskManager {
                 state: SubtaskState.CREATED,
                 submissionHash: bytes32(0),
                 score: 0,
-                exists: true
+                exists: true,
+                leaseDuration: subtasksInputs[i].leaseDuration,
+                claimTime: 0
             });
-            emit SubtaskCreated(taskId, subtaskId, subtasksInputs[i].rangeLabel, subtasksInputs[i].description, subtasksInputs[i].reward);
+            emit SubtaskCreated(taskId, subtaskId, subtasksInputs[i].rangeLabel, subtasksInputs[i].description, subtasksInputs[i].reward, subtasksInputs[i].leaseDuration);
         }
-    }
-
-    function createSubtask(bytes32 taskId, bytes32 subtaskId, string memory rangeLabel, string memory description, uint256 reward) external {
-        require(tasks[taskId].exists, "Task does not exist");
-        require(tasks[taskId].creator == msg.sender, "Only task creator can add subtasks");
-        require(!subtasks[subtaskId].exists, "Subtask already exists");
-
-        subtasks[subtaskId] = Subtask({
-            taskId: taskId,
-            worker: address(0),
-            reward: reward,
-            state: SubtaskState.CREATED,
-            submissionHash: bytes32(0),
-            score: 0,
-            exists: true
-        });
-
-        emit SubtaskCreated(taskId, subtaskId, rangeLabel, description, reward);
     }
 
     function claimSubtask(bytes32 taskId, bytes32 subtaskId) external {
@@ -116,8 +104,23 @@ contract ParallaxTaskManager {
 
         subtask.worker = msg.sender;
         subtask.state = SubtaskState.CLAIMED;
+        subtask.claimTime = block.timestamp;
 
         emit SubtaskClaimed(taskId, subtaskId, msg.sender);
+    }
+
+    function forfeitClaim(bytes32 taskId, bytes32 subtaskId) external {
+        Subtask storage subtask = subtasks[subtaskId];
+        require(subtask.exists, "Subtask does not exist");
+        require(subtask.taskId == taskId, "Task ID mismatch");
+        require(subtask.state == SubtaskState.CLAIMED, "Subtask must be in CLAIMED state");
+        require(block.timestamp > subtask.claimTime + subtask.leaseDuration, "Lease has not expired yet");
+
+        subtask.state = SubtaskState.CREATED;
+        subtask.worker = address(0);
+        subtask.claimTime = 0;
+
+        emit ClaimForfeited(taskId, subtaskId);
     }
 
     function recordSubmissionProof(bytes32 taskId, bytes32 subtaskId, bytes32 submissionHash) external {
@@ -126,6 +129,9 @@ contract ParallaxTaskManager {
         require(subtask.taskId == taskId, "Task ID mismatch");
         require(subtask.worker == msg.sender, "Only the claiming worker can submit");
         require(subtask.state == SubtaskState.CLAIMED, "Subtask must be in CLAIMED state");
+        
+        // Prevent submission if lease expired (they should forfeit instead)
+        require(block.timestamp <= subtask.claimTime + subtask.leaseDuration, "Lease has expired");
 
         subtask.submissionHash = submissionHash;
         subtask.state = SubtaskState.SUBMITTED;
@@ -146,7 +152,10 @@ contract ParallaxTaskManager {
             emit SubtaskVerified(taskId, subtaskId, true, score);
             escrow.releasePayment(taskId, subtaskId, subtask.worker, subtask.reward);
         } else {
-            subtask.state = SubtaskState.REJECTED;
+            subtask.state = SubtaskState.CREATED;
+            subtask.worker = address(0);
+            subtask.claimTime = 0;
+            subtask.submissionHash = bytes32(0);
             emit SubtaskVerified(taskId, subtaskId, false, score);
         }
     }

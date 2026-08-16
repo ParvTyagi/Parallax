@@ -26,12 +26,13 @@ The total budget for this task is: ${budget} MON.
 Your job is to break this master task into exactly 3 to 5 independent subtasks.
 Each subtask must be able to be completed independently by a different worker.
 The total reward of all subtasks must not exceed the total budget. (It is fine to leave a small buffer).
+Also, assign a realistic leaseDuration (in seconds) for each subtask based on how complex it is. Give them at least 120 seconds (2 mins) for simple tasks, up to 1800 seconds (30 mins) for hard tasks.
 
 Return ONLY valid JSON with no markdown wrapping and no backticks. The JSON must exactly match this structure:
 {
   "masterTask": "string",
   "subtasks": [
-    { "rangeLabel": "string", "description": "string", "reward": number }
+    { "rangeLabel": "string", "description": "string", "reward": number, "leaseDuration": number }
   ]
 }
 `;
