@@ -30,8 +30,8 @@ Parallax solves this by leveraging **Monad's parallel execution capabilities** a
 - **Backend API (Render):** [https://parallax-8yob.onrender.com](https://parallax-8yob.onrender.com)
 
 ### Smart Contracts (Monad Testnet)
-- `ParallaxEscrow`: `0x04AF0d04E5D4895Aca4763185b95BaCf54c26069`
-- `ParallaxTaskManager`: `0x8a50d0208c719cBB92094f3A18A072Ce37cad974`
+- `ParallaxEscrow`: [0x04AF0d04E5D4895Aca4763185b95BaCf54c26069](https://testnet.monadexplorer.com/address/0x04AF0d04E5D4895Aca4763185b95BaCf54c26069)
+- `ParallaxTaskManager`: [0x8a50d0208c719cBB92094f3A18A072Ce37cad974](https://testnet.monadexplorer.com/address/0x8a50d0208c719cBB92094f3A18A072Ce37cad974)
 
 ## 🛠 Tech Stack
 - **Smart Contracts:** Solidity, Hardhat, Ethers.js
