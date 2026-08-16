@@ -32,3 +32,14 @@ body {
 .bg-monad {
   background-color: #836EF9;
 }
+
+button:not(:disabled),
+[role="button"]:not(:disabled),
+a[href] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"]:disabled {
+  cursor: not-allowed;
+}

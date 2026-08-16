@@ -112,6 +112,14 @@ const TaskDetail = () => {
   // Mock transaction hashes for the hackathon demo effect (in reality, store these in DB)
   const mockEscrowHash = "0x8f2d" + task.taskId.substring(0, 10).toLowerCase();
 
+  // Helper to format timestamps
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "";
+    return new Date(dateStr).toLocaleString(undefined, { 
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+    });
+  };
+
   return (
     <div className="animate-in fade-in duration-700 ease-out max-w-4xl mx-auto pb-24">
       
@@ -181,8 +189,8 @@ const TaskDetail = () => {
             const isMyTask = account && st.worker && st.worker.toLowerCase() === account.toLowerCase();
 
             return (
-              <div key={st.subtaskId} className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all hover:border-gray-300">
-                <div className={`p-5 flex justify-between items-start border-b ${isVerified ? 'border-gray-100 bg-gray-50/50' : 'border-gray-100'}`}>
+              <div key={st.subtaskId} className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all hover:border-gray-300 shadow-sm">
+                <div className={`p-5 flex justify-between items-start border-b ${isVerified ? 'border-gray-100 bg-emerald-50/10' : 'border-gray-100'}`}>
                   <div>
                     <div className="flex items-center gap-3 mb-2">
                       {isVerified ? (
@@ -209,12 +217,20 @@ const TaskDetail = () => {
                   </div>
                 </div>
 
-                <div className="px-5 py-3 bg-gray-50/50 flex items-center justify-between">
-                  <div className="text-xs text-gray-500 flex items-center gap-4">
+                <div className="px-5 py-3 bg-gray-50/50 flex flex-wrap items-center justify-between gap-y-2">
+                  <div className="text-xs text-gray-500 flex flex-wrap items-center gap-4">
                     {st.worker ? (
-                      <span className="font-mono">Worker: {st.worker.slice(0, 6)}...{st.worker.slice(-4)}</span>
+                      <span className="font-mono bg-white px-2 py-1 border border-gray-200 rounded text-gray-700 shadow-sm">
+                        Worker: {st.worker.slice(0, 6)}...{st.worker.slice(-4)}
+                      </span>
                     ) : (
-                      <span>Waiting for worker...</span>
+                      <span className="text-gray-400 italic">Waiting for worker...</span>
+                    )}
+                    
+                    {st.updatedAt && (
+                      <span className="text-gray-400 font-medium flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> {formatDate(st.updatedAt)}
+                      </span>
                     )}
                   </div>
                   
