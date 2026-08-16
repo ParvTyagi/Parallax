@@ -78,28 +78,82 @@ Return ONLY valid JSON:
 
     if (rpcUrl && pk && taskManagerAddress) {
       console.log(`[Orchestrator] Preparing to sign transaction on Monad Testnet...`);
+      console.log(`[Orchestrator] RPC: ${rpcUrl}`);
+      console.log(`[Orchestrator] Contract: ${taskManagerAddress}`);
+      
+      // Ensure private key has 0x prefix
+      const formattedPk = pk.startsWith('0x') ? pk : `0x${pk}`;
+      
       const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const wallet = new ethers.Wallet(pk, provider);
+      const wallet = new ethers.Wallet(formattedPk, provider);
+      console.log(`[Orchestrator] Wallet address: ${wallet.address}`);
+      
       const contract = new ethers.Contract(taskManagerAddress, TASK_MANAGER_ABI, wallet);
 
-      console.log(`[Orchestrator] Calling verifySubtask on-chain for ${subtaskId} with pass=${passed}, score=${score}...`);
+      const taskIdArg = subtask.taskId;
+      const subtaskIdArg = subtaskId;
+      const passedArg = passed;
+      const scoreArg = score;
+      
+      console.log(`[Orchestrator] Call args: taskId=${taskIdArg}, subtaskId=${subtaskIdArg}, passed=${passedArg}, score=${scoreArg}`);
+      
+      // Manually encode to verify data is not empty
+      const callData = contract.interface.encodeFunctionData("verifySubtask", [taskIdArg, subtaskIdArg, passedArg, scoreArg]);
+      console.log(`[Orchestrator] Encoded calldata: ${callData.substring(0, 20)}... (length: ${callData.length})`);
+      
       try {
-        const tx = await contract.verifySubtask(
-          subtask.taskId,
-          subtaskId,
-          passed,
-          score,
-          { gasLimit: 3000000 } // Add manual gas limit to prevent estimation crashes
-        );
+        // Step 1: staticCall to simulate and catch revert reason
+        console.log(`[Orchestrator] Step 1: Running staticCall simulation...`);
+        try {
+          await contract.verifySubtask.staticCall(taskIdArg, subtaskIdArg, passedArg, scoreArg);
+          console.log(`[Orchestrator] ✓ staticCall simulation PASSED`);
+        } catch (simError: any) {
+          console.error(`[Orchestrator] ✗ staticCall simulation FAILED:`, simError.reason || simError.message);
+          return res.status(500).json({ 
+            success: false,
+            error: "Smart contract simulation failed before sending transaction",
+            reason: simError.reason || simError.message
+          });
+        }
+
+        // Step 2: Estimate gas
+        console.log(`[Orchestrator] Step 2: Estimating gas...`);
+        const gasEstimate = await contract.verifySubtask.estimateGas(taskIdArg, subtaskIdArg, passedArg, scoreArg);
+        console.log(`[Orchestrator] ✓ Gas estimate: ${gasEstimate.toString()}`);
+
+        // Step 3: Send the real transaction
+        console.log(`[Orchestrator] Step 3: Sending real transaction...`);
+        const tx = await contract.verifySubtask(taskIdArg, subtaskIdArg, passedArg, scoreArg, { 
+          gasLimit: gasEstimate * 2n // 2x the estimate for safety
+        });
         console.log(`[Orchestrator] Transaction broadcasted! Hash: ${tx.hash}`);
-        console.log(`[Orchestrator] Waiting for transaction to be mined...`);
-        await tx.wait();
-        console.log(`[Orchestrator] TX Mined and Confirmed!`);
-      } catch (txError) {
-        console.error(`[Orchestrator] CRITICAL ERROR: Smart Contract execution reverted!`, txError);
+        
+        // Step 4: Wait and check receipt
+        console.log(`[Orchestrator] Step 4: Waiting for transaction to be mined...`);
+        const receipt = await tx.wait();
+        
+        if (receipt && receipt.status === 1) {
+          console.log(`[Orchestrator] ✓ TX Mined and Confirmed! Block: ${receipt.blockNumber}`);
+        } else {
+          console.error(`[Orchestrator] ✗ TX mined but status is ${receipt?.status}. Transaction reverted on-chain.`);
+          return res.status(500).json({ 
+            success: false,
+            error: "Transaction mined but reverted on-chain",
+            txHash: tx.hash
+          });
+        }
+      } catch (txError: any) {
+        console.error(`[Orchestrator] CRITICAL ERROR:`, txError.reason || txError.message);
+        return res.status(500).json({ 
+          success: false,
+          error: "Smart contract transaction failed",
+          reason: txError.reason || "unknown",
+          details: txError.message 
+        });
       }
     } else {
       console.warn("[Orchestrator] Credentials missing. Skipping on-chain verification transaction.");
+      console.warn(`[Orchestrator] RPC: ${rpcUrl ? 'SET' : 'MISSING'}, PK: ${pk ? 'SET' : 'MISSING'}, ADDR: ${taskManagerAddress ? 'SET' : 'MISSING'}`);
     }
 
     console.log(`[Orchestrator] Sending success response to frontend.`);

@@ -1,5 +1,5 @@
 export const API_URL = import.meta.env.VITE_API_URL || "https://parallax-8yob.onrender.com";
-export const TASK_MANAGER_ADDRESS = "0x8a50d0208c719cBB92094f3A18A072Ce37cad974";
+export const TASK_MANAGER_ADDRESS = "0xa77Ab6E4C66A07cDE61679D04998BcE9C80507BB";
 
 export const TASK_MANAGER_ABI = [
   "function createTask(string memory description, tuple(string rangeLabel, string description, uint256 reward, uint256 leaseDuration)[] memory subtasks) external payable",
