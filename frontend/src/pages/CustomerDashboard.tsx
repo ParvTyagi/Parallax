@@ -71,7 +71,8 @@ const CustomerDashboard = () => {
         return {
           rangeLabel: st.rangeLabel,
           description: st.description,
-          reward: rewardBigInt
+          reward: rewardBigInt,
+          leaseDuration: st.leaseDuration || 1800
         };
       });
       
