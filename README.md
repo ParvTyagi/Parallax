@@ -1,8 +1,6 @@
 <div align="center">
-  <img src="https://i.imgur.com/B707rZ5.png" alt="Parallax Logo" width="200" height="200" />
   <h1>Parallax</h1>
   <p><strong>The Decentralized AI-Assisted Compute Network on Monad</strong></p>
-  <p>Parallax turns one massive customer job into independently claimable microtasks. Workers complete different pieces simultaneously, an AI orchestrator verifies them, and the corresponding reward is released instantly on the Monad blockchain.</p>
 </div>
 
 <br/>
@@ -11,36 +9,37 @@
 
 ---
 
-## 🏆 Overview
+## 🤔 What is this?
+Parallax is a decentralized, AI-orchestrated microtasking platform built on the Monad blockchain. It takes massive, complex customer workloads, dynamically slices them into bite-sized tasks, and distributes them to a global network of workers. Once a worker completes their piece, an AI verifies the work and the Monad smart contract instantly releases the payment.
 
-Current decentralized compute networks treat processing as a single monolithic block. Parallax leverages **Monad's parallel execution capabilities** by breaking down massive tasks—like dataset processing, market research, or code refactoring—into granular, independent microtasks. 
+## ⚠️ Why do we need this?
+Currently, decentralized compute networks treat processing as a single, monolithic block. If a customer needs 10,000 images tagged, or a massive codebase refactored, they have to wait for one single worker (or node) to process the entire job sequentially, which is slow and inefficient. Furthermore, verifying subjective or complex work on-chain is notoriously difficult without trusted central authorities.
 
-Instead of waiting for an entire job to finish, global workers can claim individual chunks. As soon as a chunk is completed and verified by our **AI Orchestrator (Gemini)**, the smart contract settles the payment trustlessly on-chain in sub-seconds. Once all chunks are finished, the AI synthesizes a final master solution.
+## 💡 What our project is doing
+Parallax solves this by leveraging **Monad's parallel execution capabilities** alongside AI intelligence. 
 
-## ✨ Features
-
-- 🧠 **AI Decomposition**: Customers input a large task; the AI Orchestrator intelligently slices it into digestible subtasks.
-- ⏱️ **Dynamic Leases**: The AI analyzes task complexity and assigns dynamic lease durations (e.g., 5 mins vs 30 mins). If a worker doesn't submit in time, the claim is dropped and returned to the pool.
-- 🛡️ **Trustless Verification**: Worker submissions are hashed and recorded on-chain. The AI Orchestrator verifies the off-chain data against the on-chain hash. If approved, funds are released.
-- 🧩 **Automated Master Aggregation**: When all subtasks reach `VERIFIED` status, the AI seamlessly merges disjointed worker outputs into a cohesive final solution for the customer.
-- ⚡ **Sub-Second Settlement**: Powered by the Monad Testnet for zero-friction micropayments.
-
-## 🛠 Tech Stack
-
-- **Smart Contracts:** Solidity, Hardhat, Ethers.js
-- **Blockchain:** Monad Testnet
-- **Backend:** Node.js, Express, Prisma (PostgreSQL), Gemini-3.5-flash-lite SDK
-- **Frontend:** React, Vite, Tailwind CSS, DaisyUI, ethers.js v6
+1. **AI Decomposition:** Customers input a large task; the AI Orchestrator intelligently slices it into independent subtasks.
+2. **Parallel Execution:** Global workers claim individual chunks simultaneously, dramatically speeding up completion time.
+3. **Dynamic Leases:** The AI analyzes task complexity and assigns dynamic lease durations. If a worker doesn't submit in time, the claim is dropped and returned to the pool.
+4. **Trustless AI Verification:** Worker submissions are hashed on-chain. Our AI Orchestrator acts as a decentralized QA node, evaluating the off-chain data against the task requirements. If approved, funds are released trustlessly.
+5. **Automated Master Aggregation:** When all subtasks reach `VERIFIED` status, the AI seamlessly merges the disjointed worker outputs into one cohesive final solution for the customer.
 
 ## 🌐 Live Links
 
-- **Frontend Application:** *[Vercel URL - To Be Deployed]*
-- **Backend API:** [https://parallax-8yob.onrender.com](https://parallax-8yob.onrender.com)
-- **Deployed Contracts (Monad Testnet):**
-  - `ParallaxEscrow`: `0xc46EdBfBf0433c9C7a0d508cd8a97aEC0B24C713`
-  - `ParallaxTaskManager`: `0x79430B85C3c5d762FbBF178DbADaF7981798C412`
+- **Frontend Application (Vercel):** [https://parallax-mu-sand.vercel.app/](https://parallax-mu-sand.vercel.app/)
+- **Backend API (Render):** [https://parallax-8yob.onrender.com](https://parallax-8yob.onrender.com)
 
-## 🚀 Running Locally
+### Smart Contracts (Monad Testnet)
+- `ParallaxEscrow`: `0x04AF0d04E5D4895Aca4763185b95BaCf54c26069`
+- `ParallaxTaskManager`: `0x8a50d0208c719cBB92094f3A18A072Ce37cad974`
+
+## 🛠 Tech Stack
+- **Smart Contracts:** Solidity, Hardhat, Ethers.js
+- **Blockchain:** Monad Testnet
+- **Backend:** Node.js, Express, Prisma (PostgreSQL), Gemini-3.5-flash-lite SDK
+- **Frontend:** React, Vite, Tailwind CSS, DaisyUI
+
+## 🚀 How to Setup (Local Development)
 
 ### 1. Smart Contracts
 ```bash
@@ -52,7 +51,7 @@ npx hardhat run scripts/deploy.ts --network monadTestnet
 ```
 
 ### 2. Backend
-Create a `.env` file from `.env.example` and add your database, Gemini API, and Orchestrator Private Key.
+Create a `.env` file from `.env.example` and add your database URL, Gemini API Key, Monad RPC URL, and the Orchestrator's Private Key.
 ```bash
 cd backend
 npm install
@@ -69,7 +68,7 @@ npm run dev
 ```
 
 ## 🔮 What's Next?
-- **IPFS Codebase Processing:** Allowing customers to upload `.zip` codebases to IPFS so the network can perform decentralized code reviews and refactors.
+- **IPFS Codebase Processing:** Allowing customers to upload `.zip` codebases to IPFS so the network can perform decentralized code reviews and large-scale refactoring.
 - **ZK Proof Verification:** Transitioning from an AI Orchestrator wallet to Zero-Knowledge coprocessors for mathematically provable off-chain compute verification.
 
 ---
