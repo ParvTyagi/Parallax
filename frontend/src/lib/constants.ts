@@ -1,4 +1,4 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+export const API_URL = import.meta.env.VITE_API_URL || "https://parallax-8yob.onrender.com";
 export const TASK_MANAGER_ADDRESS = "0x79430B85C3c5d762FbBF178DbADaF7981798C412";
 
 export const TASK_MANAGER_ABI = [
