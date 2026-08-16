@@ -1,0 +1,21 @@
+{
+  "name": "parallax-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for Parallax MVP",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.ts --network monadTestnet"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^26.2.0",
+    "chai": "^4.5.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.4"
+  }
+}

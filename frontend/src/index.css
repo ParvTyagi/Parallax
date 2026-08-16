@@ -1,0 +1,34 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #FAFAFA; /* Ultra light slate */
+}
+
+/* Custom crisp border utilities */
+.border-crisp {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.shadow-crisp {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+}
+
+.shadow-crisp-hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+}
+
+/* Monad brand accent */
+.text-monad {
+  color: #836EF9; /* Monad's official brand purple/blue approximation */
+}
+.bg-monad {
+  background-color: #836EF9;
+}

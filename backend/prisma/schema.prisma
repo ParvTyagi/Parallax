@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  taskId      String    @unique
+  creator     String
+  description String
+  budget      String
+  status      String    // "PENDING", "ACTIVE", "COMPLETED"
+  createdAt   DateTime  @default(now())
+  subtasks    Subtask[]
+}
+
+model Subtask {
+  id             String       @id @default(uuid())
+  taskId         String
+  subtaskId      String       @unique
+  rangeLabel     String
+  description    String
+  reward         String
+  worker         String?
+  state          String       // "CREATED", "CLAIMED", "SUBMITTED", "VERIFIED", "REJECTED"
+  submissionHash String?
+  resultUrl      String?
+  qualityScore   Int?
+  createdAt      DateTime     @default(now())
+  task           Task         @relation(fields: [taskId], references: [taskId])
+  submissions    Submission[]
+}
+
+model Submission {
+  id          String   @id @default(uuid())
+  subtaskId   String
+  worker      String
+  storagePath String
+  contentHash String
+  createdAt   DateTime @default(now())
+  subtask     Subtask  @relation(fields: [subtaskId], references: [subtaskId])
+}
