@@ -1,8 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
-import { pinToIPFS, pinFileBufferToIPFS } from "../lib/ipfs";
-
-export const mockIpfsStore = new Map<string, string>();
+import { pinToIPFS, pinFileBufferToIPFS, mockIpfsStore } from "../lib/ipfs";
+export { mockIpfsStore };
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
