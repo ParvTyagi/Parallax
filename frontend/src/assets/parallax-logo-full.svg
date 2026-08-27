@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#eab308"/>
+    </linearGradient>
+    <linearGradient id="glow2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <!-- Head: hexagonal gem -->
+  <path d="M256 100 L296 145 L296 195 L256 240 L216 195 L216 145 Z" stroke="url(#glow)" stroke-width="8" fill="none" stroke-linejoin="round"/>
+  <!-- Inner eye -->
+  <circle cx="256" cy="170" r="14" fill="url(#glow)" opacity="0.9"/>
+  <!-- Face V-shape -->
+  <path d="M236 200 L256 260 L276 200" stroke="url(#glow)" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Left tentacles -->
+  <path d="M216 155 Q160 130 110 160 Q80 178 90 220" stroke="url(#glow)" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M216 170 Q150 165 105 210 Q75 245 95 280" stroke="url(#glow)" stroke-width="6.5" fill="none" stroke-linecap="round"/>
+  <path d="M220 190 Q165 200 130 260 Q110 300 130 340" stroke="url(#glow)" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M235 220 Q195 250 170 310 Q155 350 175 380" stroke="url(#glow2)" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+  <!-- Right tentacles -->
+  <path d="M296 155 Q352 130 402 160 Q432 178 422 220" stroke="url(#glow)" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M296 170 Q362 165 407 210 Q437 245 417 280" stroke="url(#glow)" stroke-width="6.5" fill="none" stroke-linecap="round"/>
+  <path d="M292 190 Q347 200 382 260 Q402 300 382 340" stroke="url(#glow)" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M277 220 Q317 250 342 310 Q357 350 337 380" stroke="url(#glow2)" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+  <!-- Text: PARALLAX -->
+  <text x="256" y="440" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="52" letter-spacing="8" fill="url(#glow)">PARALLAX</text>
+</svg>

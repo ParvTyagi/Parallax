@@ -1,87 +1,182 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Briefcase, Activity, Code2 } from "lucide-react";
-import { cn } from "../../lib/utils";
+import {
+  PlusCircle,
+  Compass,
+  UserCircle,
+  ShieldAlert,
+  ShieldCheck,
+  ExternalLink,
+} from "lucide-react";
+import { ParallaxLogo } from "../ui/ParallaxLogo";
+import { useWeb3 } from "../../contexts/Web3Context";
 
 export default function Sidebar() {
   const location = useLocation();
+  const { account } = useWeb3();
+  const isAdmin = account?.toLowerCase() === "0xf302d2f179baf42d6f02e337b25cf882499b39e6";
 
-  const customerLinks = [
-    { name: "Dashboard", to: "/", icon: LayoutDashboard },
-  ];
-
-  const workerLinks = [
-    { name: "Worker Hub", to: "/worker", icon: Briefcase },
-  ];
-
-  const NavItem = ({ name, to, icon: Icon }: any) => {
-    const isActive = location.pathname === to;
-    return (
-      <Link
-        to={to}
-        className={cn(
-          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all group",
-          isActive
-            ? "bg-black text-white shadow-sm"
-            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-        )}
-      >
-        <Icon className={cn("w-4 h-4", isActive ? "text-white" : "text-gray-400 group-hover:text-gray-600")} />
-        {name}
-      </Link>
-    );
+  const isActive = (path: string) => {
+    if (path === "/app") return location.pathname === "/app";
+    if (path === "/worker") return location.pathname === "/worker";
+    return location.pathname.startsWith(path);
   };
 
   return (
-    <div className="w-64 h-screen border-r border-gray-100 bg-gray-50/30 flex flex-col sticky top-0">
-      
-      {/* Logo */}
-      <div className="h-16 flex items-center px-6 border-b border-gray-100 mb-6">
-        <Link to="/" className="flex items-center gap-2.5 group">
-          <div className="w-7 h-7 bg-black text-white flex items-center justify-center rounded-[4px] shadow-sm group-hover:scale-105 transition-transform">
-            <Code2 className="w-4 h-4" strokeWidth={2.5} />
-          </div>
-          <span className="text-lg font-bold tracking-tight text-gray-900">Parallax</span>
+    <aside className="w-64 h-screen bg-base-100 border-r border-base-300 flex flex-col sticky top-0 select-none">
+      {/* Brand Header */}
+      <div className="h-16 flex items-center px-6 border-b border-base-300/80 shrink-0">
+        <Link to="/" className="hover:opacity-90 transition-opacity">
+          <ParallaxLogo />
         </Link>
       </div>
 
-      <div className="flex-1 px-4 overflow-y-auto space-y-8">
-        
-        {/* Customer Section */}
+      {/* Nav List */}
+      <div className="flex-1 overflow-y-auto py-5 px-3 space-y-6">
+        {/* Client Space */}
         <div>
-          <div className="px-3 mb-2 text-xs font-bold tracking-wider text-gray-400 uppercase">
-            Customer
+          <div className="px-3 mb-2 flex items-center justify-between">
+            <span className="text-[11px] font-bold tracking-wider text-base-content/40 uppercase">
+              Client
+            </span>
           </div>
-          <div className="space-y-1">
-            {customerLinks.map((link) => (
-              <NavItem key={link.name} {...link} />
-            ))}
-          </div>
+          <ul className="space-y-1">
+            <li>
+              <Link
+                to="/app"
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
+                  isActive("/app")
+                    ? "bg-neutral text-neutral-content font-semibold shadow-xs"
+                    : "text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium"
+                }`}
+              >
+                <PlusCircle className="w-4 h-4 shrink-0" />
+                <span>Post a Project</span>
+              </Link>
+            </li>
+          </ul>
         </div>
 
-        {/* Worker Section */}
+        {/* Freelancer Space */}
         <div>
-          <div className="px-3 mb-2 text-xs font-bold tracking-wider text-gray-400 uppercase">
-            Worker
+          <div className="px-3 mb-2 flex items-center justify-between">
+            <span className="text-[11px] font-bold tracking-wider text-base-content/40 uppercase">
+              Freelancer
+            </span>
           </div>
-          <div className="space-y-1">
-            {workerLinks.map((link) => (
-              <NavItem key={link.name} {...link} />
-            ))}
-          </div>
+          <ul className="space-y-1">
+            <li>
+              <Link
+                to="/worker"
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
+                  isActive("/worker") && !location.pathname.startsWith("/worker/0x")
+                    ? "bg-neutral text-neutral-content font-semibold shadow-xs"
+                    : "text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium"
+                }`}
+              >
+                <Compass className="w-4 h-4 shrink-0" />
+                <span>Marketplace</span>
+              </Link>
+            </li>
+            {account && (
+              <li>
+                <Link
+                  to={`/worker/${account}`}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
+                    location.pathname === `/worker/${account}`
+                      ? "bg-neutral text-neutral-content font-semibold shadow-xs"
+                      : "text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium"
+                  }`}
+                >
+                  <UserCircle className="w-4 h-4 shrink-0" />
+                  <span>My Profile & Stakes</span>
+                </Link>
+              </li>
+            )}
+          </ul>
         </div>
 
+        {/* Admin Space (conditional) */}
+        {isAdmin && (
+          <div>
+            <div className="px-3 mb-2 flex items-center gap-1.5">
+              <span className="text-[11px] font-bold tracking-wider text-warning uppercase">
+                Admin Protocol
+              </span>
+            </div>
+            <ul className="space-y-1">
+              <li>
+                <Link
+                  to="/admin"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
+                    isActive("/admin")
+                      ? "bg-neutral text-neutral-content font-semibold shadow-xs"
+                      : "text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium"
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 text-warning shrink-0" />
+                  <span>Treasury & Fees</span>
+                </Link>
+              </li>
+            </ul>
+          </div>
+        )}
+
+        {/* Protocol Resources */}
+        <div>
+          <div className="px-3 mb-2">
+            <span className="text-[11px] font-bold tracking-wider text-base-content/40 uppercase">
+              Resources
+            </span>
+          </div>
+          <ul className="space-y-1">
+            <li>
+              <Link
+                to="/security"
+                className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <ShieldAlert className="w-4 h-4 shrink-0 text-base-content/60" />
+                  <span>Security & Audits</span>
+                </div>
+                <span className="badge badge-xs badge-outline text-[10px]">v1.0</span>
+              </Link>
+            </li>
+            <li>
+              <a
+                href="https://testnet.monadexplorer.com"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <ExternalLink className="w-4 h-4 shrink-0 text-base-content/60" />
+                  <span>Monad Explorer</span>
+                </div>
+              </a>
+            </li>
+          </ul>
+        </div>
       </div>
 
-      {/* Bottom status/branding */}
-      <div className="p-4 border-t border-gray-100">
-        <div className="bg-gray-100/50 rounded-lg p-3 text-xs text-gray-500 font-mono">
-          <div className="flex items-center gap-2 mb-1">
-            <Activity className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="font-semibold text-gray-700">Network Status</span>
+      {/* Network Status Footer Card */}
+      <div className="p-3 border-t border-base-300 bg-base-100 shrink-0">
+        <div className="bg-base-200/80 border border-base-300/60 rounded-xl p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+              </span>
+              <span className="text-xs font-semibold text-base-content">Monad Testnet</span>
+            </div>
+            <span className="badge badge-success badge-xs font-mono font-semibold">ONLINE</span>
           </div>
-          <span className="text-emerald-600">Operational</span>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }
+
+
+
+

@@ -3,6 +3,9 @@ pragma solidity ^0.8.24;
 
 contract ParallaxEscrow {
     address public taskManager;
+    address public platformTreasury;
+    uint256 public platformFeePercentage = 5; // 5% fee
+    uint256 public totalProtocolRevenue;
     
     // taskId => amount escrowed
     mapping(bytes32 => uint256) public escrowBalances;
@@ -10,7 +13,7 @@ contract ParallaxEscrow {
     mapping(bytes32 => bool) public subtaskPaid;
 
     event Deposited(bytes32 indexed taskId, uint256 amount);
-    event PaymentReleased(bytes32 indexed taskId, bytes32 indexed subtaskId, address worker, uint256 reward);
+    event PaymentReleased(bytes32 indexed taskId, bytes32 indexed subtaskId, address worker, uint256 workerPayout, uint256 platformFee);
     event Refunded(bytes32 indexed taskId, address creator, uint256 amount);
 
     modifier onlyTaskManager() {
@@ -18,11 +21,19 @@ contract ParallaxEscrow {
         _;
     }
 
-    constructor() {}
+    modifier onlyTreasury() {
+        require(msg.sender == platformTreasury, "Only Treasury can call this");
+        _;
+    }
 
-    function setTaskManager(address _taskManager) external {
-        require(taskManager == address(0), "TaskManager already set");
+    constructor(address _taskManager, address _platformTreasury) {
         taskManager = _taskManager;
+        platformTreasury = _platformTreasury;
+    }
+
+    function updateFee(uint256 _newFee) external onlyTreasury {
+        require(_newFee <= 20, "Fee too high"); // max 20%
+        platformFeePercentage = _newFee;
     }
 
     function deposit(bytes32 taskId) external payable {
@@ -37,10 +48,21 @@ contract ParallaxEscrow {
         subtaskPaid[subtaskId] = true;
         escrowBalances[taskId] -= reward;
         
-        (bool success, ) = worker.call{value: reward}("");
-        require(success, "Payment failed");
+        uint256 platformFee = (reward * platformFeePercentage) / 100;
+        uint256 workerPayout = reward - platformFee;
 
-        emit PaymentReleased(taskId, subtaskId, worker, reward);
+        // Pay worker
+        (bool successWorker, ) = worker.call{value: workerPayout}("");
+        require(successWorker, "Worker payment failed");
+
+        // Pay treasury
+        if (platformFee > 0) {
+            totalProtocolRevenue += platformFee;
+            (bool successTreasury, ) = platformTreasury.call{value: platformFee}("");
+            require(successTreasury, "Treasury payment failed");
+        }
+
+        emit PaymentReleased(taskId, subtaskId, worker, workerPayout, platformFee);
     }
 
     function refund(bytes32 taskId, address creator, uint256 amount) external onlyTaskManager {

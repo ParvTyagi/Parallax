@@ -4,7 +4,7 @@ import { prisma } from "../db/client";
 const router = Router();
 
 // Get all open subtasks for workers to claim
-router.get("/open-subtasks", async (req, res) => {
+router.get(["/open-subtasks", "/subtasks/open"], async (req, res) => {
   try {
     // A subtask is open if it has no worker assigned
     const subtasks = await prisma.subtask.findMany({
@@ -72,6 +72,36 @@ router.get("/:taskId", async (req, res) => {
   } catch (error) {
     console.error("Error fetching task:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get worker profile (Reputation & claimed subtasks)
+router.get(["/worker-profile/:address", "/workers/:address"], async (req, res) => {
+  try {
+    const { address } = req.params;
+    let profile = await prisma.workerProfile.findUnique({
+      where: { address }
+    });
+    
+    if (!profile) {
+      profile = { address, successfulTasks: 0, failedTasks: 0, reputationScore: 0, stakedAmount: "0" } as any;
+    }
+
+    const claimedSubtasks = await prisma.subtask.findMany({
+      where: { worker: address },
+      orderBy: { createdAt: 'desc' },
+      include: { task: true }
+    });
+
+    res.json({
+      address,
+      profile,
+      claimedSubtasks,
+      ...profile
+    });
+  } catch (error) {
+    console.error("Failed to fetch worker profile:", error);
+    res.status(500).json({ error: "Failed to fetch worker profile" });
   }
 });
 

@@ -1,12 +1,15 @@
 import { Router } from "express";
-import { geminiModel } from "../lib/gemini";
+import { getGeminiModel } from "../lib/gemini";
+import { fetchFromIPFS, pinToIPFS } from "../lib/ipfs";
+import crypto from "crypto";
 import { z } from "zod";
 
 const router = Router();
 
 const DecomposeRequestSchema = z.object({
-  description: z.string(),
-  budget: z.string()
+  descriptionCID: z.string(),
+  budget: z.string(),
+  aiModel: z.string().optional()
 });
 
 router.post("/", async (req, res) => {
@@ -16,11 +19,17 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Invalid request body" });
     }
 
-    const { description, budget } = parsed.data;
+    const { descriptionCID, budget, aiModel } = parsed.data;
+    
+    // Use the user-selected model (falls back to default if non-Gemini or unset)
+    const model = getGeminiModel(aiModel);
+    console.log(`\n[Orchestrator] Using model "${aiModel || 'default'}" for task decomposition...`);
+
+    const masterTaskText = await fetchFromIPFS(descriptionCID);
 
     const prompt = `
 You are an AI task orchestrator for a microtasking platform.
-The user wants to accomplish the following master task: "${description}"
+The user wants to accomplish the following master task: "${masterTaskText}"
 The total budget for this task is: ${budget} MON.
 
 Your job is to break this master task into exactly 3 to 5 independent subtasks.
@@ -37,7 +46,7 @@ Return ONLY valid JSON with no markdown wrapping and no backticks. The JSON must
 }
 `;
 
-    const result = await geminiModel.generateContent(prompt);
+    const result = await model.generateContent(prompt);
     const text = result.response.text().trim().replace(/```json/g, "").replace(/```/g, "");
     
     let parsedJson;
@@ -51,6 +60,14 @@ Return ONLY valid JSON with no markdown wrapping and no backticks. The JSON must
     // Validate the parsed output
     if (!parsedJson.masterTask || !Array.isArray(parsedJson.subtasks) || parsedJson.subtasks.length < 3 || parsedJson.subtasks.length > 5) {
       return res.status(500).json({ error: "AI decomposition failed validation checks." });
+    }
+
+    // Convert descriptions to CIDs before returning to frontend
+    parsedJson.masterTaskCID = await pinToIPFS(parsedJson.masterTask);
+    
+    // Process subtasks sequentially to avoid rate limits or nonce issues
+    for (const st of parsedJson.subtasks) {
+      st.descriptionCID = await pinToIPFS(st.description);
     }
 
     res.json(parsedJson);

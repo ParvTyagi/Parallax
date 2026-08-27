@@ -9,8 +9,9 @@ const TASK_MANAGER_ABI = [
   "event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward, uint256 leaseDuration)",
   "event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker)",
   "event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId)",
-  "event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, bytes32 submissionHash)",
-  "event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score)"
+  "event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, string submissionCID)",
+  "event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score)",
+  "event ReputationUpdated(address indexed worker, int256 newScore, uint256 successfulTasks, uint256 failedTasks)"
 ];
 
 // We will simulate AI aggregation off-chain here when all tasks are verified.
@@ -97,12 +98,21 @@ export async function setupChainListeners() {
             });
           }
           else if (event.eventName === "SubmissionProofRecorded") {
-            const [taskId, subtaskId, submissionHash] = event.args;
-            console.log(`Event SubmissionProofRecorded: ${subtaskId}`);
+            const [taskId, subtaskId, submissionCID] = event.args;
+            console.log(`Event SubmissionProofRecorded: ${subtaskId} (CID: ${submissionCID})`);
             await prisma.subtask.updateMany({
               where: { subtaskId: subtaskId },
-              data: { state: "SUBMITTED", submissionHash: submissionHash }
+              data: { state: "SUBMITTED", submissionHash: submissionCID }
             });
+            // Queue Verification Job
+            await prisma.job.create({
+              data: {
+                type: "VERIFY",
+                payload: { subtaskId: subtaskId },
+                status: "PENDING"
+              }
+            });
+            console.log(`[Queue] Pushed VERIFY job for ${subtaskId}`);
           }
           else if (event.eventName === "SubtaskVerified") {
             const [taskId, subtaskId, passed, score] = event.args;
@@ -120,38 +130,41 @@ export async function setupChainListeners() {
             if (passed) {
               const task = await prisma.task.findUnique({
                 where: { taskId: taskId },
-                include: { subtasks: { include: { submissions: { orderBy: { createdAt: 'desc' }, take: 1 } } } }
+                include: { subtasks: true }
               });
 
               if (task) {
                 const allVerified = task.subtasks.every(st => st.state === "VERIFIED");
                 if (allVerified && task.status !== "COMPLETED") {
-                  console.log(`[Aggregation] All subtasks verified for task ${taskId}! Triggering aggregation...`);
-                  
-                  // Gather all submissions
-                  const allWork = task.subtasks.map(st => `[Subtask: ${st.description}]\nWorker Output: ${st.submissions[0]?.storagePath || "No data"}\n`).join("\n");
-                  
-                  const prompt = `You are a synthesis AI. We have a master task: "${task.description}".
-The workers have completed the subtasks. Here are their submissions:
-${allWork}
-
-Synthesize these submissions into a single cohesive, well-formatted final solution for the master task. Return ONLY the final output markdown text.`;
-
-                  try {
-                    const aiResult = await geminiModel.generateContent(prompt);
-                    const finalSolution = aiResult.response.text().trim();
-                    
-                    await prisma.task.update({
-                      where: { taskId: taskId },
-                      data: { status: "COMPLETED", solution: finalSolution }
-                    });
-                    console.log(`[Aggregation] Task ${taskId} successfully aggregated and marked COMPLETED.`);
-                  } catch (aggErr) {
-                    console.error("[Aggregation] Failed to aggregate solution:", aggErr);
-                  }
+                  console.log(`[Queue] All subtasks verified for task ${taskId}! Pushing AGGREGATE job...`);
+                  await prisma.job.create({
+                    data: {
+                      type: "AGGREGATE",
+                      payload: { taskId: taskId },
+                      status: "PENDING"
+                    }
+                  });
                 }
               }
             }
+          }
+          else if (event.eventName === "ReputationUpdated") {
+            const [worker, newScore, successfulTasks, failedTasks] = event.args;
+            console.log(`Event ReputationUpdated: ${worker} (score: ${newScore})`);
+            await prisma.workerProfile.upsert({
+              where: { address: worker },
+              update: { 
+                reputationScore: Number(newScore),
+                successfulTasks: Number(successfulTasks),
+                failedTasks: Number(failedTasks)
+              },
+              create: {
+                address: worker,
+                reputationScore: Number(newScore),
+                successfulTasks: Number(successfulTasks),
+                failedTasks: Number(failedTasks)
+              }
+            });
           }
         } catch (dbError) {
           console.error("DB Update Error during event sync:", dbError);

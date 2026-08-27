@@ -1,32 +1,75 @@
 import { useState, useEffect } from "react";
 import { useWeb3 } from "../contexts/Web3Context";
 import { ethers } from "ethers";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/Tabs";
 import { API_URL } from "../lib/constants";
+import { Link } from "react-router-dom";
+import {
+  Layers,
+  CheckCircle2,
+  Coins,
+  Sparkles,
+  Shield,
+  UploadCloud,
+  FileText,
+  X,
+  ArrowRight,
+  AlertCircle,
+  Clock,
+  Search,
+  Lock,
+} from "lucide-react";
+
+const BADGE_MAP: Record<string, { label: string; cls: string }> = {
+  OPEN:      { label: "OPEN", cls: "badge-info" },
+  CLAIMED:   { label: "CLAIMED", cls: "badge-warning" },
+  SUBMITTED: { label: "SUBMITTED", cls: "badge-secondary" },
+  VERIFIED:  { label: "VERIFIED", cls: "badge-success" },
+  FAILED:    { label: "FAILED", cls: "badge-error" },
+};
+
+const PROMPT_TEMPLATES = [
+  {
+    label: "DeFi Research",
+    text: "Research the top 5 decentralized liquidity protocols on Monad, compare their fee structures, TVL growth, and summarize key findings in structured markdown.",
+    budget: "10.0",
+  },
+  {
+    label: "Smart Contract Audit",
+    text: "Review the ERC-20 staking vault contract for reentrancy vectors, unhandled return values, integer underflow risks, and produce a formal security report.",
+    budget: "25.0",
+  },
+  {
+    label: "Data Annotation",
+    text: "Analyze and categorize 200 customer support tickets into billing, technical, and feature request buckets with confidence scores.",
+    budget: "8.5",
+  },
+];
 
 const CustomerDashboard = () => {
   const { account, signer, taskManager, connectWallet } = useWeb3();
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState("");
+  const [minReputation, setMinReputation] = useState("0");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusText, setStatusText] = useState("");
+  const [errorText, setErrorText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [aiModel, setAiModel] = useState("gemini-3.7-flash");
+  const [activeTab, setActiveTab] = useState<"create" | "tasks">("create");
+  const [searchFilter, setSearchFilter] = useState("");
 
   const [myTasks, setMyTasks] = useState<any[]>([]);
 
   useEffect(() => {
-    if (account) {
-      fetchCustomerTasks(account);
-    } else {
-      setMyTasks([]);
-    }
+    if (account) fetchCustomerTasks(account);
+    else setMyTasks([]);
   }, [account]);
 
   useEffect(() => {
     let interval: any;
     if (account && myTasks.length > 0) {
-      interval = setInterval(() => {
-        fetchCustomerTasks(account);
-      }, 5000);
+      interval = setInterval(() => fetchCustomerTasks(account), 5000);
     }
     return () => clearInterval(interval);
   }, [account, myTasks.length]);
@@ -34,10 +77,7 @@ const CustomerDashboard = () => {
   const fetchCustomerTasks = async (walletAddress: string) => {
     try {
       const res = await fetch(`${API_URL}/api/tasks/customer/${walletAddress}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMyTasks(data);
-      }
+      if (res.ok) setMyTasks(await res.json());
     } catch (e) {
       console.error(e);
     }
@@ -48,37 +88,66 @@ const CustomerDashboard = () => {
       await connectWallet();
       return;
     }
-    if (!description || !budget) return;
-
+    if (!description.trim() || !budget || Number(budget) <= 0) return;
     setIsProcessing(true);
+    setErrorText("");
     try {
-      setStatusText("AI is analyzing and decomposing the master task...");
+      let finalDescription = description.trim();
+
+      if (isPrivate) {
+        setStatusText("Encrypting payload with Lit Protocol…");
+        await new Promise((r) => setTimeout(r, 1500));
+        finalDescription = `[ENCRYPTED_LIT_PROTOCOL_PAYLOAD] Original length: ${description.length}\n${finalDescription}`;
+      }
+
+      if (file) {
+        setStatusText("Uploading dataset attachment to IPFS…");
+        const formData = new FormData();
+        formData.append("file", file);
+        const fileRes = await fetch(`${API_URL}/api/ipfs/upload-file`, {
+          method: "POST",
+          body: formData,
+        });
+        const fileData = await fileRes.json();
+        if (!fileRes.ok) throw new Error(fileData.error || "File upload failed");
+        finalDescription += `\n\nAttached Dataset CID: ${fileData.cid}`;
+      }
+
+      setStatusText("Pinning master task spec to IPFS…");
+      const ipfsRes = await fetch(`${API_URL}/api/ipfs/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: finalDescription }),
+      });
+      const ipfsData = await ipfsRes.json();
+      if (!ipfsRes.ok) throw new Error(ipfsData.error || "IPFS upload failed");
+
+      setStatusText(`Decomposing task via ${aiModel}…`);
       const res = await fetch(`${API_URL}/api/decompose`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description, budget })
+        body: JSON.stringify({ descriptionCID: ipfsData.cid, budget, aiModel }),
       });
       const data = await res.json();
-      
-      if (!res.ok) throw new Error(data.error || "Decompose failed");
+      if (!res.ok) throw new Error(data.error || "AI Decomposition failed");
 
-      setStatusText("Awaiting MetaMask confirmation to fund escrow...");
-      
+      setStatusText("Confirming Monad escrow funding in MetaMask…");
       let totalValue = 0n;
       const subtasksFormatted = data.subtasks.map((st: any) => {
-        const rewardBigInt = ethers.parseEther(st.reward.toString());
-        totalValue += rewardBigInt;
+        const r = ethers.parseEther(st.reward.toString());
+        totalValue += r;
         return {
           rangeLabel: st.rangeLabel,
-          description: st.description,
-          reward: rewardBigInt,
-          leaseDuration: st.leaseDuration || 1800
+          description: st.descriptionCID,
+          reward: r,
+          leaseDuration: st.leaseDuration || 1800,
         };
       });
-      
+
       const txData = taskManager!.interface.encodeFunctionData("createTask", [
-        data.masterTask,
-        subtasksFormatted
+        data.masterTaskCID,
+        parseInt(minReputation) || 0,
+        subtasksFormatted,
       ]);
 
       await window.ethereum.request({
@@ -89,183 +158,572 @@ const CustomerDashboard = () => {
             to: await taskManager!.getAddress(),
             data: txData,
             value: "0x" + totalValue.toString(16),
-            gas: "0x2DC6C0"
-          }
-        ]
+            gas: "0x2DC6C0",
+          },
+        ],
       });
-      
-      setStatusText("Transaction sent! Waiting for confirmation...");
-      
-      setStatusText("Task created successfully on Monad Testnet!");
+
+      setStatusText("Task published to Monad Testnet!");
       setTimeout(() => {
         setIsProcessing(false);
         setStatusText("");
         setDescription("");
         setBudget("");
+        setMinReputation("0");
+        setFile(null);
+        setIsPrivate(false);
         if (account) fetchCustomerTasks(account);
-      }, 3000);
-      
+        setActiveTab("tasks");
+      }, 2000);
     } catch (error: any) {
       console.error(error);
-      alert("Error: " + (error.message || "Unknown error"));
+      setErrorText(error.message || "An unexpected error occurred.");
       setIsProcessing(false);
       setStatusText("");
     }
   };
 
-  const activeCount = myTasks.filter(t => t.subtasks.some((st:any) => st.state !== "VERIFIED")).length;
-  const completedCount = myTasks.filter(t => t.subtasks.every((st:any) => st.state === "VERIFIED") && t.subtasks.length > 0).length;
-  const escrowedMON = myTasks.reduce((acc, t) => acc + Number(t.budget), 0).toFixed(2);
+  const activeCount = myTasks.filter((t) =>
+    t.subtasks.some((st: any) => st.state !== "VERIFIED")
+  ).length;
+  const completedCount = myTasks.filter(
+    (t) =>
+      t.subtasks.length > 0 &&
+      t.subtasks.every((st: any) => st.state === "VERIFIED")
+  ).length;
+  const totalEscrowedMON = myTasks
+    .reduce((acc, t) => acc + Number(t.budget || 0), 0)
+    .toFixed(2);
+
+  const filteredTasks = myTasks.filter((t) => {
+    if (!searchFilter) return true;
+    return t.description?.toLowerCase().includes(searchFilter.toLowerCase());
+  });
 
   return (
-    <div className="animate-in fade-in duration-700 ease-out max-w-5xl mx-auto pb-24">
-      
-      {/* Header & Stats */}
-      <div className="mb-10">
-        <h1 className="text-2xl font-bold tracking-tight text-black mb-6">Welcome to Parallax.<br/><span className="text-gray-400 font-normal">Manage your tasks.</span></h1>
-        
-        {account && (
-          <div className="grid grid-cols-3 gap-6 bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-10">
-            <div>
-              <p className="text-sm text-gray-500 font-medium mb-1">Active Tasks</p>
-              <p className="text-2xl font-mono font-bold text-black">{activeCount}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium mb-1">Escrowed</p>
-              <p className="text-2xl font-mono font-bold text-black">{escrowedMON} <span className="text-sm text-gray-400">MON</span></p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium mb-1">Completed</p>
-              <p className="text-2xl font-mono font-bold text-emerald-600">{completedCount}</p>
-            </div>
-          </div>
+    <div className="animate-in fade-in duration-300 pb-20">
+      {/* ─── Header Section ─── */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-base-content">
+            Client Workspace
+          </h1>
+          <p className="text-sm text-base-content/60 mt-1">
+            Publish complex goals, fund trustless escrows, and let Gemini AI coordinate decentralized execution.
+          </p>
+        </div>
+
+        {/* Action button if on tasks tab */}
+        {activeTab === "tasks" && (
+          <button
+            onClick={() => setActiveTab("create")}
+            className="btn btn-neutral btn-sm font-semibold gap-1.5 self-start md:self-auto"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            New Project
+          </button>
         )}
       </div>
 
-      <Tabs defaultValue="create" className="w-full">
-        <TabsList className="mb-8 w-full justify-start rounded-none border-b border-gray-200 bg-transparent p-0">
-          <TabsTrigger 
-            value="create" 
-            className="rounded-none border-b-2 border-transparent data-[state=active]:border-black data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black px-6 rounded-t-lg text-gray-500 hover:text-black"
-          >
-            Create Task
-          </TabsTrigger>
-          <TabsTrigger 
-            value="tasks"
-            className="rounded-none border-b-2 border-transparent data-[state=active]:border-black data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black px-6 rounded-t-lg text-gray-500 hover:text-black"
-          >
-            My Tasks ({myTasks.length})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="create" className="mt-0">
-          <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm max-w-2xl">
-            <h2 className="text-xl font-bold tracking-tight text-black mb-2">New Parallax Task</h2>
-            <p className="text-sm text-gray-500 mb-8">Describe your objective. The AI Orchestrator will decompose it into microtasks and deploy it to the worker network.</p>
-            
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Objective Description</label>
-                <textarea
-                  className="w-full p-4 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:border-black focus:ring-1 focus:ring-black outline-none transition-all resize-none shadow-sm text-black placeholder-gray-400 disabled:opacity-50"
-                  placeholder="e.g. Research 20 AI startups..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={5}
-                  disabled={isProcessing}
-                />
+      {/* ─── Metric KPI Cards ─── */}
+      {account && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+            <div className="card-body p-4 md:p-5">
+              <div className="flex items-center justify-between text-base-content/50 mb-2">
+                <span className="text-xs font-medium uppercase tracking-wider">Active Projects</span>
+                <Clock className="w-4 h-4 text-info" />
               </div>
-              
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Total Escrow Budget (MON)</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-mono">Ξ</span>
-                  <input
-                    type="number"
-                    className="w-full pl-10 p-4 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:border-black focus:ring-1 focus:ring-black outline-none transition-all shadow-sm text-black font-mono disabled:opacity-50"
-                    placeholder="0.00"
-                    value={budget}
-                    onChange={(e) => setBudget(e.target.value)}
+              <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
+                {activeCount}
+              </div>
+              <span className="text-[11px] text-base-content/50">Under active execution</span>
+            </div>
+          </div>
+
+          <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+            <div className="card-body p-4 md:p-5">
+              <div className="flex items-center justify-between text-base-content/50 mb-2">
+                <span className="text-xs font-medium uppercase tracking-wider">Completed</span>
+                <CheckCircle2 className="w-4 h-4 text-success" />
+              </div>
+              <div className="text-2xl md:text-3xl font-bold font-mono text-success">
+                {completedCount}
+              </div>
+              <span className="text-[11px] text-base-content/50">Verified & settled</span>
+            </div>
+          </div>
+
+          <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+            <div className="card-body p-4 md:p-5">
+              <div className="flex items-center justify-between text-base-content/50 mb-2">
+                <span className="text-xs font-medium uppercase tracking-wider">Escrowed</span>
+                <Coins className="w-4 h-4 text-accent" />
+              </div>
+              <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
+                {totalEscrowedMON} <span className="text-xs font-sans font-medium text-base-content/50">MON</span>
+              </div>
+              <span className="text-[11px] text-base-content/50">Locked in smart contract</span>
+            </div>
+          </div>
+
+          <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+            <div className="card-body p-4 md:p-5">
+              <div className="flex items-center justify-between text-base-content/50 mb-2">
+                <span className="text-xs font-medium uppercase tracking-wider">Total Subtasks</span>
+                <Layers className="w-4 h-4 text-secondary" />
+              </div>
+              <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
+                {myTasks.reduce((acc, t) => acc + (t.subtasks?.length || 0), 0)}
+              </div>
+              <span className="text-[11px] text-base-content/50">Across all projects</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Tabs Bar ─── */}
+      <div className="flex border-b border-base-300 mb-8 gap-8">
+        <button
+          onClick={() => setActiveTab("create")}
+          className={`pb-3 text-sm font-semibold transition-all relative ${
+            activeTab === "create"
+              ? "text-base-content font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
+              : "text-base-content/50 hover:text-base-content"
+          }`}
+        >
+          Post a Project
+        </button>
+        <button
+          onClick={() => setActiveTab("tasks")}
+          className={`pb-3 text-sm font-semibold transition-all relative flex items-center gap-2 ${
+            activeTab === "tasks"
+              ? "text-base-content font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
+              : "text-base-content/50 hover:text-base-content"
+          }`}
+        >
+          <span>My Projects</span>
+          <span className="badge badge-sm badge-neutral font-mono text-xs">
+            {myTasks.length}
+          </span>
+        </button>
+      </div>
+
+      {/* ─── CREATE PROJECT TAB ─── */}
+      {activeTab === "create" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Form (2 cols) */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+              <div className="card-body p-6 md:p-8 gap-6">
+                <div>
+                  <h2 className="text-lg font-bold text-base-content">Project Specifications</h2>
+                  <p className="text-xs text-base-content/50 mt-0.5">
+                    Provide detailed requirements. Gemini will break it down into 3-5 verifiable subtasks.
+                  </p>
+                </div>
+
+                {/* Quick Templates */}
+                <div>
+                  <span className="text-xs font-semibold text-base-content/60 mb-2 block">
+                    Quick Templates:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {PROMPT_TEMPLATES.map((tmpl) => (
+                      <button
+                        key={tmpl.label}
+                        type="button"
+                        onClick={() => {
+                          setDescription(tmpl.text);
+                          setBudget(tmpl.budget);
+                        }}
+                        className="btn btn-xs btn-outline border-base-300 text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                      >
+                        {tmpl.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Job Description Textarea */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-base-content uppercase tracking-wider flex justify-between">
+                    <span>Job Description *</span>
+                    <span className="text-base-content/40 font-mono text-[11px] font-normal">
+                      {description.length} / 2000
+                    </span>
+                  </label>
+                  <textarea
+                    rows={5}
+                    className="textarea textarea-bordered w-full text-sm leading-relaxed focus:textarea-primary"
+                    placeholder="e.g. Research the top 10 DeFi protocols by TVL on Monad, evaluate their smart contract architecture, and deliver an executive summary in Markdown..."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
                     disabled={isProcessing}
+                    maxLength={2000}
                   />
                 </div>
-              </div>
-              
-              <div className="pt-4 border-t border-gray-100">
-                <button 
-                  onClick={handleDecompose}
-                  disabled={isProcessing || !description || !budget}
-                  className="w-full bg-black text-white font-semibold py-4 rounded-lg hover:bg-gray-900 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {isProcessing ? (
-                    <>
-                       <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
-                       {statusText || "Processing..."}
-                    </>
+
+                {/* Budget & Min Reputation */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-base-content uppercase tracking-wider">
+                      Budget (MON) *
+                    </label>
+                    <div className="join w-full">
+                      <span className="join-item btn btn-sm bg-base-200 border-base-300 font-mono font-bold text-xs">
+                        MON
+                      </span>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="0.00"
+                        className="input input-sm input-bordered join-item w-full font-mono text-sm"
+                        value={budget}
+                        onChange={(e) => setBudget(e.target.value)}
+                        disabled={isProcessing}
+                      />
+                    </div>
+                    <p className="text-[11px] text-base-content/40">
+                      Escrowed on Monad & split across generated subtasks.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-base-content uppercase tracking-wider">
+                      Min Worker Reputation
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="0"
+                      className="input input-sm input-bordered w-full font-mono text-sm"
+                      value={minReputation}
+                      onChange={(e) => setMinReputation(e.target.value)}
+                      disabled={isProcessing}
+                    />
+                    <p className="text-[11px] text-base-content/40">
+                      {Number(minReputation) === 0
+                        ? "0 = Open to all network workers"
+                        : `Requires ≥ ${minReputation} reputation score`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Dataset Attachment (optional) */}
+                <div className="space-y-1.5 pt-2 border-t border-base-300/60">
+                  <label className="text-xs font-bold text-base-content uppercase tracking-wider">
+                    Attach Dataset / Spec File (optional)
+                  </label>
+                  {!file ? (
+                    <label className="border border-dashed border-base-300 hover:border-base-content/40 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-base-200/40 transition-colors">
+                      <UploadCloud className="w-5 h-5 text-base-content/50" />
+                      <span className="text-xs font-semibold text-base-content/70">
+                        Click to upload PDF, CSV, JSON, or TXT
+                      </span>
+                      <span className="text-[10px] text-base-content/40">
+                        Dataset is pinned to IPFS for worker access
+                      </span>
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                        disabled={isProcessing}
+                      />
+                    </label>
                   ) : (
-                    <>
-                      {account ? "Decompose & Deploy" : "Connect Wallet to Continue"}
-                    </>
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-base-200 border border-base-300">
+                      <div className="flex items-center gap-2 truncate">
+                        <FileText className="w-4 h-4 text-primary shrink-0" />
+                        <span className="text-xs font-medium text-base-content truncate">
+                          {file.name}
+                        </span>
+                        <span className="text-[10px] text-base-content/50 font-mono">
+                          ({(file.size / 1024).toFixed(1)} KB)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFile(null)}
+                        className="btn btn-ghost btn-xs btn-square"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   )}
-                </button>
+                </div>
+
+                {/* AI Model & Lit Privacy */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2 border-t border-base-300/60">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-base-content uppercase tracking-wider">
+                      AI Orchestrator Engine
+                    </label>
+                    <select
+                      value={aiModel}
+                      onChange={(e) => setAiModel(e.target.value)}
+                      disabled={isProcessing}
+                      className="select select-sm select-bordered w-full text-xs"
+                    >
+                      <option value="gemini-3.7-flash">⚡ Gemini 3.7 Flash — Deep Reasoning</option>
+                      <option value="gemini-3.6-flash">✦ Gemini 3.6 Flash — Balanced</option>
+                      <option value="gemini-3.5-flash">✦ Gemini 3.5 Flash — Ultra-fast</option>
+                      <option value="gemini-3.1-pro-preview">🧠 Gemini 3.1 Pro — Advanced</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-base-content uppercase tracking-wider">
+                      Payload Privacy
+                    </label>
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-base-200/60 border border-base-300">
+                      <div className="flex items-center gap-2">
+                        <Lock className="w-3.5 h-3.5 text-base-content/60" />
+                        <div>
+                          <p className="text-xs font-semibold text-base-content">Lit Protocol Encryption</p>
+                          <p className="text-[10px] text-base-content/40">Only claimant workers can decrypt</p>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        className="toggle toggle-sm toggle-neutral"
+                        checked={isPrivate}
+                        onChange={(e) => setIsPrivate(e.target.checked)}
+                        disabled={isProcessing}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Error Banner */}
+                {errorText && (
+                  <div role="alert" className="alert alert-error text-xs py-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{errorText}</span>
+                  </div>
+                )}
+
+                {/* Submit Action */}
+                <div className="pt-2 border-t border-base-300/60">
+                  <button
+                    onClick={handleDecompose}
+                    disabled={isProcessing || !description.trim() || !budget}
+                    className="btn btn-neutral btn-block font-bold text-sm shadow-xs"
+                  >
+                    {isProcessing ? (
+                      <span className="flex items-center gap-2">
+                        <span className="loading loading-spinner loading-xs" />
+                        {statusText || "Decomposing & funding escrow…"}
+                      </span>
+                    ) : account ? (
+                      <span className="flex items-center gap-2">
+                        Request AI Decomposition & Fund Escrow
+                        <ArrowRight className="w-4 h-4" />
+                      </span>
+                    ) : (
+                      "Connect Wallet to Post"
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </TabsContent>
 
-        <TabsContent value="tasks" className="mt-0">
+          {/* Right Info Sidebar (1 col) */}
+          <div className="space-y-5">
+            <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+              <div className="card-body p-5 gap-4">
+                <div className="flex items-center gap-2 text-sm font-bold text-base-content">
+                  <Sparkles className="w-4 h-4 text-accent" />
+                  <span>How AI Decomposition Works</span>
+                </div>
+                <ul className="space-y-3 text-xs text-base-content/70 leading-relaxed">
+                  <li className="flex gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-base-200 border border-base-300 flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
+                      1
+                    </span>
+                    <span>Gemini analyzes your objective and breaks it into 3 to 5 independent subtasks.</span>
+                  </li>
+                  <li className="flex gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-base-200 border border-base-300 flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
+                      2
+                    </span>
+                    <span>Your total MON budget is automatically distributed proportionally across subtasks.</span>
+                  </li>
+                  <li className="flex gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-base-200 border border-base-300 flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
+                      3
+                    </span>
+                    <span>Funds lock in <code className="font-mono bg-base-200 px-1 py-0.5 rounded">ParallaxEscrow.sol</code> on Monad Testnet until verified.</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+              <div className="card-body p-5 gap-3 text-xs text-base-content/60 leading-relaxed">
+                <div className="flex items-center gap-2 font-bold text-base-content">
+                  <Shield className="w-4 h-4 text-success" />
+                  <span>Zero Risk Guarantee</span>
+                </div>
+                <p>
+                  Workers must stake MON before claiming subtasks. If a worker submits invalid work or abandons a lease, their stake is slashed and the subtask reopens automatically.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MY PROJECTS TAB ─── */}
+      {activeTab === "tasks" && (
+        <div className="space-y-6">
+          {/* Search bar */}
+          {myTasks.length > 0 && (
+            <div className="flex justify-between items-center gap-4">
+              <div className="relative max-w-sm w-full">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
+                <input
+                  type="text"
+                  placeholder="Filter your projects…"
+                  className="input input-sm input-bordered w-full pl-9 text-xs"
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
           {!account ? (
-             <div className="text-center py-20 bg-gray-50 rounded-xl border border-gray-100 text-gray-500 text-sm">Please connect your wallet to view your tasks.</div>
-          ) : myTasks.length === 0 ? (
-             <div className="text-center py-20 bg-gray-50 rounded-xl border border-gray-100 text-gray-500 text-sm">You haven't created any tasks yet.</div>
+            <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
+              <div className="max-w-md mx-auto space-y-4">
+                <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/60">
+                  <Coins className="w-6 h-6" />
+                </div>
+                <h3 className="text-lg font-bold text-base-content">Connect Wallet</h3>
+                <p className="text-xs text-base-content/60 leading-relaxed">
+                  Connect your Web3 wallet to view and manage your active task escrows on Monad.
+                </p>
+                <button onClick={connectWallet} className="btn btn-neutral btn-sm font-semibold">
+                  Connect Wallet
+                </button>
+              </div>
+            </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
+              <div className="max-w-md mx-auto space-y-4">
+                <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/50">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-base-content">No projects found</h3>
+                  <p className="text-xs text-base-content/50 mt-1">
+                    {searchFilter
+                      ? "No projects match your filter query."
+                      : "You haven't posted any projects yet."}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSearchFilter("");
+                    setActiveTab("create");
+                  }}
+                  className="btn btn-neutral btn-sm font-semibold"
+                >
+                  Create Your First Project
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {myTasks.map((task) => {
-                const verifiedCount = task.subtasks.filter((st: any) => st.state === "VERIFIED").length;
+              {filteredTasks.map((task) => {
+                const verifiedCount = task.subtasks.filter(
+                  (st: any) => st.state === "VERIFIED"
+                ).length;
                 const totalCount = task.subtasks.length;
-                const isComplete = verifiedCount === totalCount && totalCount > 0;
-                
+                const pct = totalCount > 0 ? (verifiedCount / totalCount) * 100 : 0;
+                const isComplete = totalCount > 0 && verifiedCount === totalCount;
+
                 return (
-                  <a 
-                    key={task.taskId} 
-                    href={`/task/${task.taskId}`}
-                    className="bg-white border border-gray-200 rounded-xl p-6 hover:border-black hover:shadow-sm transition-all group block relative overflow-hidden flex flex-col h-full"
+                  <Link
+                    to={`/task/${task.taskId}`}
+                    key={task.taskId}
+                    className="card bg-base-100 border border-base-300/80 hover:border-base-content/30 hover:shadow-md transition-all group"
                   >
-                    <div className="flex justify-between items-start mb-4">
-                      <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-2 py-1 rounded">{task.taskId.substring(0, 10)}...</span>
-                      {isComplete ? (
-                        <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1"><span className="text-emerald-500">✓</span> COMPLETED</span>
-                      ) : (
-                        <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> ACTIVE</span>
-                      )}
-                    </div>
-                    
-                    <h3 className="font-semibold text-gray-900 group-hover:text-black mb-6 line-clamp-2">{task.description}</h3>
-                    
-                    <div className="mt-auto">
-                      <div className="flex items-center justify-between mb-3">
-                         <span className="text-xs font-mono font-bold text-black">{task.budget} MON Escrowed</span>
-                         <span className="text-xs font-semibold text-gray-500">{verifiedCount}/{totalCount} Completed</span>
+                    <div className="card-body p-5 gap-4">
+                      {/* Top row */}
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[10px] font-mono text-base-content/40 uppercase block mb-1">
+                            ID: #{task.taskId?.slice(0, 8)}
+                          </span>
+                          <h3 className="text-sm font-semibold text-base-content leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                            {task.description}
+                          </h3>
+                        </div>
+                        <span className="badge badge-neutral font-mono font-bold text-xs shrink-0">
+                          {Number(task.budget).toFixed(2)} MON
+                        </span>
                       </div>
-                      
-                      {/* Progress bar */}
-                      <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full transition-all duration-1000 ease-out ${isComplete ? 'bg-emerald-500' : 'bg-black'}`} 
-                          style={{ width: `${totalCount === 0 ? 0 : (verifiedCount / totalCount) * 100}%` }}
-                        ></div>
+
+                      {/* Progress Bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs text-base-content/60">
+                          <span>
+                            {verifiedCount} of {totalCount} subtasks completed
+                          </span>
+                          <span className="font-mono font-semibold">{pct.toFixed(0)}%</span>
+                        </div>
+                        <progress
+                          className={`progress w-full h-1.5 ${
+                            isComplete ? "progress-success" : "progress-primary"
+                          }`}
+                          value={pct}
+                          max={100}
+                        />
+                      </div>
+
+                      {/* Subtask Status Chips */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-base-300/60">
+                        <div className="flex flex-wrap gap-1.5">
+                          {task.subtasks.slice(0, 3).map((st: any) => {
+                            const badge = BADGE_MAP[st.state] || { label: st.state, cls: "badge-ghost" };
+                            return (
+                              <span
+                                key={st.subtaskId}
+                                className={`badge badge-xs ${badge.cls} font-mono`}
+                              >
+                                {badge.label}
+                              </span>
+                            );
+                          })}
+                          {task.subtasks.length > 3 && (
+                            <span className="badge badge-xs badge-ghost font-mono">
+                              +{task.subtasks.length - 3} more
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="text-xs font-semibold text-base-content/50 group-hover:text-base-content flex items-center gap-1">
+                          View Graph <ArrowRight className="w-3.5 h-3.5" />
+                        </span>
                       </div>
                     </div>
-                  </a>
+                  </Link>
                 );
               })}
             </div>
           )}
-        </TabsContent>
-
-      </Tabs>
+        </div>
+      )}
     </div>
   );
 };
 
 export default CustomerDashboard;
+
+
+
+

@@ -1,27 +1,50 @@
 import { ethers } from "hardhat";
+import hre from "hardhat";
 
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deploying contracts with the account:", deployer ? await deployer.getAddress() : "UNKNOWN");
 
-  const Escrow = await ethers.getContractFactory("ParallaxEscrow");
-  const escrow = await Escrow.deploy();
-  await escrow.waitForDeployment();
-  const escrowAddress = await escrow.getAddress();
-  console.log("ParallaxEscrow deployed to:", escrowAddress);
-
-  // Hardcoded orchestrator for hackathon demo (will be read from backend env later, but deployer can also be orchestrator or another fixed address)
+  // Hardcoded orchestrator and treasury for hackathon demo
   const orchestratorAddress = deployer ? await deployer.getAddress() : "0x0000000000000000000000000000000000000000";
+  const platformTreasury = "0xf302D2f179baf42d6F02E337B25Cf882499b39e6";
 
   const TaskManager = await ethers.getContractFactory("ParallaxTaskManager");
-  const taskManager = await TaskManager.deploy(escrowAddress, orchestratorAddress);
+  const taskManager = await TaskManager.deploy(orchestratorAddress, platformTreasury);
   await taskManager.waitForDeployment();
   const taskManagerAddress = await taskManager.getAddress();
   console.log("ParallaxTaskManager deployed to:", taskManagerAddress);
 
-  // Set TaskManager in Escrow
-  await escrow.setTaskManager(taskManagerAddress);
-  console.log("TaskManager registered in Escrow.");
+  // Read escrow address automatically deployed by TaskManager
+  const escrowAddress = await taskManager.escrow();
+  console.log("ParallaxEscrow deployed automatically to:", escrowAddress);
+
+  // Export to frontend
+  const fs = require("fs");
+  const path = require("path");
+  
+  const frontendConstantsPath = path.join(__dirname, "../../frontend/src/lib/constants.ts");
+  
+  // Get ABI from artifacts
+  const artifact = await hre.artifacts.readArtifact("ParallaxTaskManager");
+  
+  const constantsContent = `export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+export const TASK_MANAGER_ADDRESS = "${taskManagerAddress}";
+
+export const TASK_MANAGER_ABI = ${JSON.stringify(artifact.abi, null, 2)};
+`;
+
+  fs.writeFileSync(frontendConstantsPath, constantsContent);
+  console.log("Updated frontend constants.ts");
+  
+  // Export to backend
+  const backendEnvPath = path.join(__dirname, "../../backend/.env");
+  if (fs.existsSync(backendEnvPath)) {
+    let envContent = fs.readFileSync(backendEnvPath, "utf-8");
+    envContent = envContent.replace(/TASK_MANAGER_ADDRESS=.*/g, `TASK_MANAGER_ADDRESS=${taskManagerAddress}`);
+    fs.writeFileSync(backendEnvPath, envContent);
+    console.log("Updated backend .env");
+  }
 }
 
 main().catch((error) => {
