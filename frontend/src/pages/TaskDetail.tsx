@@ -25,7 +25,7 @@ const STATE_BADGE: Record<string, { label: string; cls: string }> = {
 
 const TaskDetail = () => {
   const { taskId } = useParams<{ taskId: string }>();
-  const { account, signer, taskManager, connectWallet } = useWeb3();
+  const { account, taskManager, connectWallet } = useWeb3();
   const [task, setTask] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [submission, setSubmission] = useState("");
@@ -66,30 +66,24 @@ const TaskDetail = () => {
       await connectWallet();
       return;
     }
+    if (!taskManager) {
+      setMsg(subtaskId, "Wallet not connected. Please connect your Web3 wallet.");
+      return;
+    }
     setClaimingId(subtaskId);
     try {
-      const txData = taskManager!.interface.encodeFunctionData("claimSubtask", [
-        taskId,
-        subtaskId,
-      ]);
-      await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: await signer!.getAddress(),
-            to: await taskManager!.getAddress(),
-            data: txData,
-            gas: "0x186A0",
-          },
-        ],
-      });
+      setMsg(subtaskId, "Confirming claim in MetaMask…");
+      const tx = await taskManager.claimSubtask(taskId, subtaskId);
+      setMsg(subtaskId, "Transaction submitted! Waiting for confirmation…");
+      await tx.wait();
       setMsg(subtaskId, "Claimed successfully! Refreshing state…");
       setTimeout(() => {
         fetchTask();
         clearMsg(subtaskId);
-      }, 3000);
+      }, 2000);
     } catch (e: any) {
-      setMsg(subtaskId, "Error: " + e.message);
+      console.error("Claim error:", e);
+      setMsg(subtaskId, "Error: " + (e.reason || e.info?.error?.message || e.message || "Claim transaction failed"));
     } finally {
       setClaimingId(null);
     }
@@ -97,40 +91,39 @@ const TaskDetail = () => {
 
   const handleSubmit = async (subtaskId: string) => {
     if (!submission.trim()) return;
+    if (!taskManager) {
+      setMsg(subtaskId, "Wallet not connected. Please connect your Web3 wallet.");
+      return;
+    }
     setSubmittingId(subtaskId);
     try {
+      setMsg(subtaskId, "Uploading deliverable to IPFS…");
       const ipfsRes = await fetch(`${API_URL}/api/ipfs/upload`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: submission }),
       });
       const ipfsData = await ipfsRes.json();
-      if (!ipfsRes.ok) throw new Error(ipfsData.error);
+      if (!ipfsRes.ok) throw new Error(ipfsData.error || "IPFS upload failed");
 
-      const txData = taskManager!.interface.encodeFunctionData("submitWork", [
+      setMsg(subtaskId, "Recording submission proof on Monad…");
+      const tx = await taskManager.recordSubmissionProof(
         taskId,
         subtaskId,
-        ipfsData.cid,
-      ]);
-      await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: await signer!.getAddress(),
-            to: await taskManager!.getAddress(),
-            data: txData,
-            gas: "0x186A0",
-          },
-        ],
-      });
+        ipfsData.cid
+      );
+      setMsg(subtaskId, "Transaction submitted! Waiting for confirmation…");
+      await tx.wait();
+
       setMsg(subtaskId, "Work submitted to IPFS & recorded on-chain. Ready for AI verification!");
       setSubmission("");
       setTimeout(() => {
         fetchTask();
         clearMsg(subtaskId);
-      }, 4000);
+      }, 3000);
     } catch (e: any) {
-      setMsg(subtaskId, "Error: " + e.message);
+      console.error("Submit error:", e);
+      setMsg(subtaskId, "Error: " + (e.reason || e.info?.error?.message || e.message || "Submission failed"));
     } finally {
       setSubmittingId(null);
     }
@@ -156,7 +149,7 @@ const TaskDetail = () => {
         clearMsg(subtaskId);
       }, 4000);
     } catch (e: any) {
-      setMsg(subtaskId, "Verification error: " + e.message);
+      setMsg(subtaskId, "Verification error: " + (e.message || "Verification failed"));
     } finally {
       setVerifyingId(null);
     }
@@ -165,30 +158,24 @@ const TaskDetail = () => {
   const handleForfeit = async (subtaskId: string) => {
     if (!window.confirm("Are you sure you want to forfeit this task? Your staked deposit will be slashed."))
       return;
+    if (!taskManager) {
+      setMsg(subtaskId, "Wallet not connected. Please connect your Web3 wallet.");
+      return;
+    }
     setForfeitingId(subtaskId);
     try {
-      const txData = taskManager!.interface.encodeFunctionData("forfeitSubtask", [
-        taskId,
-        subtaskId,
-      ]);
-      await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: await signer!.getAddress(),
-            to: await taskManager!.getAddress(),
-            data: txData,
-            gas: "0x186A0",
-          },
-        ],
-      });
+      setMsg(subtaskId, "Confirming forfeit on Monad…");
+      const tx = await taskManager.forfeitClaim(taskId, subtaskId);
+      setMsg(subtaskId, "Transaction submitted! Waiting for confirmation…");
+      await tx.wait();
       setMsg(subtaskId, "Forfeited. Task re-opened in marketplace.");
       setTimeout(() => {
         fetchTask();
         clearMsg(subtaskId);
-      }, 3000);
+      }, 2000);
     } catch (e: any) {
-      setMsg(subtaskId, "Error: " + e.message);
+      console.error("Forfeit error:", e);
+      setMsg(subtaskId, "Error: " + (e.reason || e.info?.error?.message || e.message || "Forfeit failed"));
     } finally {
       setForfeitingId(null);
     }

@@ -46,7 +46,7 @@ const PROMPT_TEMPLATES = [
 ];
 
 const CustomerDashboard = () => {
-  const { account, signer, taskManager, connectWallet } = useWeb3();
+  const { account, taskManager, connectWallet } = useWeb3();
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState("");
   const [minReputation, setMinReputation] = useState("0");
@@ -144,24 +144,19 @@ const CustomerDashboard = () => {
         };
       });
 
-      const txData = taskManager!.interface.encodeFunctionData("createTask", [
+      if (!taskManager) {
+        throw new Error("Web3 provider not initialized. Please reconnect your wallet.");
+      }
+
+      const tx = await taskManager.createTask(
         data.masterTaskCID,
         parseInt(minReputation) || 0,
         subtasksFormatted,
-      ]);
+        { value: totalValue }
+      );
 
-      await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: await signer!.getAddress(),
-            to: await taskManager!.getAddress(),
-            data: txData,
-            value: "0x" + totalValue.toString(16),
-            gas: "0x2DC6C0",
-          },
-        ],
-      });
+      setStatusText("Transaction submitted! Waiting for Monad confirmation…");
+      await tx.wait();
 
       setStatusText("Task published to Monad Testnet!");
       setTimeout(() => {
@@ -176,8 +171,14 @@ const CustomerDashboard = () => {
         setActiveTab("tasks");
       }, 2000);
     } catch (error: any) {
-      console.error(error);
-      setErrorText(error.message || "An unexpected error occurred.");
+      console.error("Task creation error:", error);
+      const friendlyError =
+        error?.reason ||
+        error?.info?.error?.message ||
+        error?.data?.message ||
+        error?.message ||
+        "Transaction failed. Check your wallet balance and network.";
+      setErrorText(friendlyError);
       setIsProcessing(false);
       setStatusText("");
     }

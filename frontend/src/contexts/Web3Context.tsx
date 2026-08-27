@@ -9,6 +9,41 @@ declare global {
   }
 }
 
+export const MONAD_CHAIN_ID = "0x279F"; // 10143 in decimal
+
+export const MONAD_TESTNET_CONFIG = {
+  chainId: MONAD_CHAIN_ID,
+  chainName: "Monad Testnet",
+  nativeCurrency: {
+    name: "MON",
+    symbol: "MON",
+    decimals: 18,
+  },
+  rpcUrls: ["https://testnet-rpc.monad.xyz"],
+  blockExplorerUrls: ["https://testnet.monadexplorer.com"],
+};
+
+export const ensureMonadNetwork = async () => {
+  if (typeof window === "undefined" || !window.ethereum) return;
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: MONAD_CHAIN_ID }],
+    });
+  } catch (switchError: any) {
+    if (switchError.code === 4902 || switchError.data?.originalError?.code === 4902) {
+      try {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [MONAD_TESTNET_CONFIG],
+        });
+      } catch (addError) {
+        console.error("Failed to add Monad Testnet to wallet:", addError);
+      }
+    }
+  }
+};
+
 interface Web3ContextType {
   account: string | null;
   balance: string | null;
@@ -19,6 +54,7 @@ interface Web3ContextType {
   disconnectWallet: () => void;
   isConnecting: boolean;
   refreshBalance: () => Promise<void>;
+  ensureNetwork: () => Promise<void>;
 }
 
 const Web3Context = createContext<Web3ContextType>({
@@ -31,6 +67,7 @@ const Web3Context = createContext<Web3ContextType>({
   disconnectWallet: () => {},
   isConnecting: false,
   refreshBalance: async () => {},
+  ensureNetwork: async () => {},
 });
 
 export const useWeb3 = () => useContext(Web3Context);
@@ -85,13 +122,16 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     if (window.ethereum) {
       window.ethereum.on('accountsChanged', (accounts: string[]) => {
         if (accounts.length > 0) {
-          window.location.reload(); // Simplest way to cleanly reset state
+          window.location.reload();
         } else {
           setAccount(null);
           setBalance(null);
           setSigner(null);
           setTaskManager(null);
         }
+      });
+      window.ethereum.on('chainChanged', () => {
+        window.location.reload();
       });
     }
   }, []);
@@ -104,6 +144,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     
     setIsConnecting(true);
     try {
+      await ensureMonadNetwork();
       const _provider = new ethers.BrowserProvider(window.ethereum);
       await _provider.send("eth_requestAccounts", []);
       
@@ -130,7 +171,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <Web3Context.Provider value={{ account, balance, provider, signer, taskManager, connectWallet, disconnectWallet, isConnecting, refreshBalance }}>
+    <Web3Context.Provider value={{ account, balance, provider, signer, taskManager, connectWallet, disconnectWallet, isConnecting, refreshBalance, ensureNetwork: ensureMonadNetwork }}>
       {children}
     </Web3Context.Provider>
   );
