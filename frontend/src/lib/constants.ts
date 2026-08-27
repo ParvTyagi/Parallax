@@ -1,5 +1,11 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-export const TASK_MANAGER_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+export const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
+    ? "https://parallax-8yob.onrender.com"
+    : "http://localhost:3000");
+
+export const TASK_MANAGER_ADDRESS =
+  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0x8a50d0208c719cBB92094f3A18A072Ce37cad974";
 
 export const TASK_MANAGER_ABI = [
   {

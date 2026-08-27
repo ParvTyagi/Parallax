@@ -28,8 +28,14 @@ async function main() {
   // Get ABI from artifacts
   const artifact = await hre.artifacts.readArtifact("ParallaxTaskManager");
   
-  const constantsContent = `export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-export const TASK_MANAGER_ADDRESS = "${taskManagerAddress}";
+  const constantsContent = `export const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
+    ? "https://parallax-8yob.onrender.com"
+    : "http://localhost:3000");
+
+export const TASK_MANAGER_ADDRESS =
+  import.meta.env.VITE_TASKMANAGER_ADDRESS || "${taskManagerAddress}";
 
 export const TASK_MANAGER_ABI = ${JSON.stringify(artifact.abi, null, 2)};
 `;
