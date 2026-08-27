@@ -161,7 +161,7 @@ export default function AdminDashboard() {
             </div>
 
             <p className="text-xs text-neutral-content/70 leading-relaxed">
-              Revenue streams directly into <code className="font-mono text-accent">ParallaxEscrow.sol</code>. Executing a withdrawal transfers unlocked revenue to the protocol multi-sig cold storage wallet.
+              Protocol fee revenue accumulates directly in the treasury smart contract. Executing a withdrawal transfers unlocked revenue to the designated protocol governance cold storage wallet.
             </p>
 
             <button

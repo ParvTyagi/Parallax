@@ -556,7 +556,7 @@ const CustomerDashboard = () => {
                     <span className="w-5 h-5 rounded-full bg-base-200 border border-base-300 flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
                       3
                     </span>
-                    <span>Funds lock in <code className="font-mono bg-base-200 px-1 py-0.5 rounded">ParallaxEscrow.sol</code> on Monad Testnet until verified.</span>
+                    <span>Your budget is held in secure on-chain escrow until each deliverable is verified.</span>
                   </li>
                 </ul>
               </div>

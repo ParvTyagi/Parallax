@@ -602,7 +602,7 @@ const TaskDetail = () => {
                 Submissions are pinned to IPFS and evaluated by the Gemini AI Orchestrator against the original master task parameters.
               </p>
               <p className="text-[11px] text-base-content/50">
-                Upon meeting verification criteria (score ≥ 70/100), the orchestrator signs a transaction directly executing the release of funds from <code className="font-mono bg-base-200 px-1 py-0.5 rounded">ParallaxTaskManager.sol</code>.
+                Upon meeting verification criteria (score ≥ 70/100), the protocol automatically executes the release of escrowed funds directly to the worker's wallet.
               </p>
             </div>
           </div>

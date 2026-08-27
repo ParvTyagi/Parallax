@@ -6,7 +6,6 @@ import {
   Compass,
   UserCircle,
   ShieldCheck,
-  ShieldAlert,
   X,
 } from "lucide-react";
 import { useWeb3 } from "../../contexts/Web3Context";
@@ -185,8 +184,8 @@ export default function MobileNav() {
                       onClick={() => setOpen(false)}
                       className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-base-content/70 hover:bg-base-200"
                     >
-                      <ShieldAlert className="w-4 h-4" />
-                      <span>Security & Audits</span>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Security & Trust</span>
                     </Link>
                   </li>
                 </ul>

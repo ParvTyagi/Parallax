@@ -3,7 +3,6 @@ import {
   PlusCircle,
   Compass,
   UserCircle,
-  ShieldAlert,
   ShieldCheck,
   ExternalLink,
 } from "lucide-react";
@@ -135,8 +134,8 @@ export default function Sidebar() {
                 className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium transition-all"
               >
                 <div className="flex items-center gap-3">
-                  <ShieldAlert className="w-4 h-4 shrink-0 text-base-content/60" />
-                  <span>Security & Audits</span>
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-base-content/60" />
+                  <span>Security & Trust</span>
                 </div>
                 <span className="badge badge-xs badge-outline text-[10px]">v1.0</span>
               </Link>
