@@ -134,13 +134,14 @@ const CustomerDashboard = () => {
       setStatusText("Confirming Monad escrow funding in MetaMask…");
       let totalValue = 0n;
       const subtasksFormatted = data.subtasks.map((st: any) => {
-        const r = ethers.parseEther(st.reward.toString());
+        const rewardStr = typeof st.reward === "number" ? st.reward.toFixed(4) : parseFloat(st.reward || "0").toFixed(4);
+        const r = ethers.parseEther(rewardStr);
         totalValue += r;
         return {
-          rangeLabel: st.rangeLabel,
-          description: st.descriptionCID,
+          rangeLabel: String(st.rangeLabel || "Subtask"),
+          description: String(st.descriptionCID || st.description || ""),
           reward: r,
-          leaseDuration: st.leaseDuration || 1800,
+          leaseDuration: BigInt(st.leaseDuration || 1800),
         };
       });
 
@@ -150,7 +151,6 @@ const CustomerDashboard = () => {
 
       const tx = await taskManager.createTask(
         data.masterTaskCID,
-        parseInt(minReputation) || 0,
         subtasksFormatted,
         { value: totalValue }
       );

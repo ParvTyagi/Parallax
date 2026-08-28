@@ -6,10 +6,11 @@ dotenv.config();
 
 const TASK_MANAGER_ABI = [
   "event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget, string description)",
+  "event TaskCancelled(bytes32 indexed taskId, address indexed creator, uint256 refundedAmount)",
   "event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward, uint256 leaseDuration)",
   "event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker)",
   "event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId)",
-  "event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, string submissionCID)",
+  "event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, bytes32 submissionHash)",
   "event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score)",
   "event ReputationUpdated(address indexed worker, int256 newScore, uint256 successfulTasks, uint256 failedTasks)"
 ];
@@ -62,6 +63,18 @@ export async function setupChainListeners() {
                 budget: ethers.formatEther(budget),
                 status: "ACTIVE"
               }
+            });
+          }
+          else if (event.eventName === "TaskCancelled") {
+            const [taskId, creator, refundedAmount] = event.args;
+            console.log(`Event TaskCancelled: ${taskId}, refunded: ${ethers.formatEther(refundedAmount)} MON`);
+            await prisma.task.updateMany({
+              where: { taskId: taskId },
+              data: { status: "CANCELLED" }
+            });
+            await prisma.subtask.updateMany({
+              where: { taskId: taskId, state: "CREATED" },
+              data: { state: "CANCELLED" }
             });
           }
           else if (event.eventName === "SubtaskCreated") {

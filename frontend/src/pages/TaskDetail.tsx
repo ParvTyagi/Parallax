@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { ethers } from "ethers";
 import { useWeb3 } from "../contexts/Web3Context";
 import {
   CheckCircle2,
@@ -17,10 +18,12 @@ import { API_URL } from "../lib/constants";
 
 const STATE_BADGE: Record<string, { label: string; cls: string }> = {
   OPEN:      { label: "OPEN", cls: "badge-info" },
+  CREATED:   { label: "OPEN", cls: "badge-info" },
   CLAIMED:   { label: "CLAIMED", cls: "badge-warning" },
   SUBMITTED: { label: "SUBMITTED", cls: "badge-secondary" },
   VERIFIED:  { label: "VERIFIED", cls: "badge-success" },
   FAILED:    { label: "FAILED", cls: "badge-error" },
+  REJECTED:  { label: "FAILED", cls: "badge-error" },
 };
 
 const TaskDetail = () => {
@@ -35,6 +38,8 @@ const TaskDetail = () => {
   const [forfeitingId, setForfeitingId] = useState<string | null>(null);
   const [statusMessages, setStatusMessages] = useState<Record<string, string>>({});
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [cancellingTask, setCancellingTask] = useState(false);
+  const [cancelStatus, setCancelStatus] = useState("");
 
   useEffect(() => {
     fetchTask();
@@ -107,13 +112,29 @@ const TaskDetail = () => {
       if (!ipfsRes.ok) throw new Error(ipfsData.error || "IPFS upload failed");
 
       setMsg(subtaskId, "Recording submission proof on Monad…");
+      const submissionHash = ethers.id(ipfsData.cid);
       const tx = await taskManager.recordSubmissionProof(
         taskId,
         subtaskId,
-        ipfsData.cid
+        submissionHash
       );
       setMsg(subtaskId, "Transaction submitted! Waiting for confirmation…");
       await tx.wait();
+
+      // Notify backend of submission for real-time tracking
+      try {
+        await fetch(`${API_URL}/api/submissions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subtaskId,
+            worker: account,
+            content: submission
+          })
+        });
+      } catch (subErr) {
+        console.warn("Backend submission sync note:", subErr);
+      }
 
       setMsg(subtaskId, "Work submitted to IPFS & recorded on-chain. Ready for AI verification!");
       setSubmission("");
@@ -178,6 +199,34 @@ const TaskDetail = () => {
       setMsg(subtaskId, "Error: " + (e.reason || e.info?.error?.message || e.message || "Forfeit failed"));
     } finally {
       setForfeitingId(null);
+    }
+  };
+
+  const handleCancelTask = async () => {
+    if (!taskId) return;
+    if (!window.confirm("Are you sure you want to cancel this project? All remaining escrowed funds will be refunded directly to your wallet."))
+      return;
+    if (!taskManager) {
+      alert("Wallet not connected. Please connect your Web3 wallet.");
+      return;
+    }
+    setCancellingTask(true);
+    setCancelStatus("Confirming cancellation in MetaMask…");
+    try {
+      const tx = await taskManager.cancelTask(taskId);
+      setCancelStatus("Transaction submitted! Waiting for confirmation…");
+      await tx.wait();
+      setCancelStatus("Project cancelled and escrow refunded to your wallet!");
+      setTimeout(() => {
+        fetchTask();
+        setCancelStatus("");
+      }, 3000);
+    } catch (e: any) {
+      console.error("Cancel task error:", e);
+      setCancelStatus("Error: " + (e.reason || e.info?.error?.message || e.message || "Cancellation failed"));
+      setTimeout(() => setCancelStatus(""), 5000);
+    } finally {
+      setCancellingTask(false);
     }
   };
 
@@ -267,12 +316,38 @@ const TaskDetail = () => {
                 {task.description}
               </h1>
 
-              {task.customerAddress && (
+              {(task.creator || task.customerAddress) && (
                 <div className="flex items-center gap-2 text-xs text-base-content/50 font-mono pt-1">
                   <span>Creator:</span>
                   <span className="text-base-content font-medium truncate max-w-xs">
-                    {task.customerAddress}
+                    {task.creator || task.customerAddress}
                   </span>
+                  {account && (task.creator || task.customerAddress)?.toLowerCase() === account.toLowerCase() && (
+                    <span className="badge badge-xs badge-info font-sans font-semibold">You</span>
+                  )}
+                </div>
+              )}
+
+              {account && (task.creator || task.customerAddress)?.toLowerCase() === account.toLowerCase() && task.status !== "CANCELLED" && task.status !== "COMPLETED" && (
+                <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCancelTask}
+                    disabled={cancellingTask}
+                    className="btn btn-outline btn-error btn-xs font-semibold"
+                  >
+                    {cancellingTask ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="loading loading-spinner loading-xs" />
+                        Refunding Escrow…
+                      </span>
+                    ) : (
+                      "Cancel Task & Refund Escrow"
+                    )}
+                  </button>
+                  {cancelStatus && (
+                    <span className="text-xs text-info font-medium">{cancelStatus}</span>
+                  )}
                 </div>
               )}
             </div>
@@ -325,6 +400,28 @@ const TaskDetail = () => {
         </div>
       </div>
 
+      {/* ─── Master Synthesized Deliverable Solution ─── */}
+      {task.solution && (
+        <div className="card bg-base-100 border-2 border-primary/30 shadow-md mb-8 overflow-hidden">
+          <div className="bg-primary/10 border-b border-primary/20 px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              <h3 className="font-bold text-sm text-base-content uppercase tracking-wider">
+                Final Synthesized Project Solution
+              </h3>
+            </div>
+            <span className="badge badge-success font-mono font-bold text-xs gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" /> AI AGGREGATED
+            </span>
+          </div>
+          <div className="p-6 md:p-8 space-y-4">
+            <div className="text-sm text-base-content whitespace-pre-wrap leading-relaxed bg-base-200/50 p-6 rounded-xl border border-base-300 font-mono">
+              {task.solution}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── Main View: Execution Graph & Sidebar ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Subtask Pipeline (2 cols) */}
@@ -340,35 +437,41 @@ const TaskDetail = () => {
           </div>
 
           {task.subtasks.map((st: any, index: number) => {
-            const isWorker = account?.toLowerCase() === st.workerAddress?.toLowerCase();
-            const isCustomer = account?.toLowerCase() === task.customerAddress?.toLowerCase();
-            const stateMeta = STATE_BADGE[st.state] || { label: st.state, cls: "badge-ghost" };
+            const workerAddr = st.worker || st.workerAddress;
+            const isWorker = Boolean(account && workerAddr && account.toLowerCase() === workerAddr.toLowerCase());
+            
+            const isOpen = (st.state === "OPEN" || st.state === "CREATED") && !workerAddr;
+            const isClaimed = st.state === "CLAIMED" || (Boolean(workerAddr) && st.state !== "VERIFIED" && st.state !== "SUBMITTED");
+            const isSubmitted = st.state === "SUBMITTED";
+            const isVerified = st.state === "VERIFIED";
+
+            const stateMeta = STATE_BADGE[st.state] || (isOpen ? { label: "OPEN", cls: "badge-info" } : { label: st.state, cls: "badge-ghost" });
 
             return (
               <div
                 key={st.subtaskId}
                 className={`card bg-base-100 border border-base-300/80 shadow-xs transition-all ${
-                  st.state === "VERIFIED" ? "bg-base-100/70" : ""
+                  isVerified ? "bg-base-100/70" : ""
                 }`}
               >
                 <div className="card-body p-5 md:p-6 gap-4">
                   {/* Subtask Header */}
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-3 flex-1">
                       <div className="w-7 h-7 rounded-lg bg-base-200 border border-base-300 flex items-center justify-center text-xs font-mono font-bold shrink-0">
                         {index + 1}
                       </div>
-                      <div>
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-base-content/40 block mb-0.5">
+                      <div className="space-y-1.5 flex-1">
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-base-content/40 block">
                           {st.rangeLabel || `Phase ${index + 1}`}
                         </span>
-                        <h4 className="text-sm font-semibold text-base-content leading-snug">
+                        <div className="text-sm font-medium text-base-content leading-relaxed bg-base-200/40 p-3 rounded-lg border border-base-300/60">
                           {st.description}
-                        </h4>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-col items-end gap-2 shrink-0">
                       <span className="badge badge-neutral font-mono font-bold text-xs">
                         {st.reward} MON
                       </span>
@@ -379,15 +482,46 @@ const TaskDetail = () => {
                   </div>
 
                   {/* Worker Attribution (if claimed) */}
-                  {st.workerAddress && (
+                  {workerAddr && (
                     <div className="flex items-center gap-2 text-xs text-base-content/50 font-mono bg-base-200/40 p-2.5 rounded-lg border border-base-300/60">
                       <span className="text-[11px] text-base-content/60">Worker:</span>
                       <Link
-                        to={`/worker/${st.workerAddress}`}
+                        to={`/worker/${workerAddr}`}
                         className="text-base-content hover:underline truncate font-medium"
                       >
-                        {st.workerAddress}
+                        {workerAddr}
                       </Link>
+                      {isWorker && (
+                        <span className="badge badge-xs badge-success font-sans font-semibold ml-auto">
+                          You
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Worker Deliverable Result Preview (if submitted or verified) */}
+                  {(isSubmitted || isVerified || st.submissionContent) && (
+                    <div className="space-y-2 bg-base-200/40 p-3.5 rounded-lg border border-base-300/60">
+                      <div className="flex items-center justify-between text-xs font-bold text-base-content uppercase tracking-wider">
+                        <span className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+                          <span>Submitted Deliverable Result</span>
+                        </span>
+                        {st.qualityScore != null && (
+                          <span className="badge badge-success badge-xs font-mono font-bold">
+                            Score: {st.qualityScore}/100
+                          </span>
+                        )}
+                      </div>
+                      {st.submissionContent ? (
+                        <div className="text-xs text-base-content/90 font-mono bg-base-100 p-3 rounded-lg border border-base-300/80 max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                          {st.submissionContent}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-base-content/50 italic">
+                          Deliverable securely recorded on Monad and pinned to IPFS.
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -399,7 +533,7 @@ const TaskDetail = () => {
                   )}
 
                   {/* Verified State Feedback */}
-                  {st.state === "VERIFIED" && (
+                  {isVerified && (
                     <div className="flex items-center justify-between p-3 rounded-lg bg-success/10 border border-success/20 text-success text-xs font-medium">
                       <div className="flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4" />
@@ -409,10 +543,10 @@ const TaskDetail = () => {
                   )}
 
                   {/* OPEN State: Claim CTA */}
-                  {st.state === "OPEN" && (
+                  {isOpen && (
                     <div className="pt-2 border-t border-base-300/60 flex items-center justify-between">
                       <span className="text-xs text-base-content/50">
-                        Requires worker staking deposit
+                        Open for any freelancer to claim
                       </span>
                       <button
                         type="button"
@@ -426,14 +560,14 @@ const TaskDetail = () => {
                             Claiming…
                           </span>
                         ) : (
-                          "Claim & Stake Subtask"
+                          "Claim Subtask"
                         )}
                       </button>
                     </div>
                   )}
 
                   {/* CLAIMED State & Worker: Deliverable Submission */}
-                  {st.state === "CLAIMED" && isWorker && (
+                  {isClaimed && isWorker && (
                     <div className="pt-2 border-t border-base-300/60 space-y-3">
                       <label className="text-xs font-bold text-base-content uppercase tracking-wider block">
                         Submit Your Deliverable
@@ -473,17 +607,24 @@ const TaskDetail = () => {
                     </div>
                   )}
 
+                  {isClaimed && !isWorker && (
+                    <div className="pt-2 border-t border-base-300/60 flex items-center justify-between text-xs text-base-content/50">
+                      <span>Currently in progress by claimant worker.</span>
+                      <span className="badge badge-warning badge-xs font-mono">CLAIMED</span>
+                    </div>
+                  )}
+
                   {/* SUBMITTED State: AI Verification or Download */}
-                  {st.state === "SUBMITTED" && (
+                  {isSubmitted && (
                     <div className="pt-2 border-t border-base-300/60 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-base-content/60">
                           Deliverable submitted to IPFS.
                         </span>
-                        {st.submissionCID && (
+                        {(st.submissionCID || st.submissionHash || st.submissions?.[0]?.storagePath) && (
                           <button
                             type="button"
-                            onClick={() => handleDownload(st.submissionCID, st.subtaskId)}
+                            onClick={() => handleDownload(st.submissionCID || st.submissions?.[0]?.storagePath || st.submissionHash, st.subtaskId)}
                             disabled={downloadingId === st.subtaskId}
                             className="btn btn-ghost btn-xs text-xs gap-1"
                           >
@@ -493,26 +634,24 @@ const TaskDetail = () => {
                         )}
                       </div>
 
-                      {isCustomer && (
-                        <button
-                          type="button"
-                          onClick={() => handleVerify(st.subtaskId)}
-                          disabled={verifyingId === st.subtaskId}
-                          className="btn btn-neutral btn-sm font-bold text-xs gap-1.5"
-                        >
-                          {verifyingId === st.subtaskId ? (
-                            <span className="flex items-center gap-2">
-                              <span className="loading loading-spinner loading-xs" />
-                              Running Gemini AI Verification…
-                            </span>
-                          ) : (
-                            <>
-                              <Sparkles className="w-3.5 h-3.5 text-accent" />
-                              <span>Run AI Verification</span>
-                            </>
-                          )}
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleVerify(st.subtaskId)}
+                        disabled={verifyingId === st.subtaskId}
+                        className="btn btn-neutral btn-sm font-bold text-xs gap-1.5"
+                      >
+                        {verifyingId === st.subtaskId ? (
+                          <span className="flex items-center gap-2">
+                            <span className="loading loading-spinner loading-xs" />
+                            Running Gemini AI Verification…
+                          </span>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5 text-accent" />
+                            <span>Run AI Verification</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
                 </div>

@@ -1,17 +1,59 @@
 import { Router } from "express";
 import { prisma } from "../db/client";
+import { fetchFromIPFS } from "../lib/ipfs";
 
 const router = Router();
+
+async function resolveSubtaskText(st: any) {
+  if (!st) return st;
+  const descText = await fetchFromIPFS(st.description);
+  let submissionContent = "";
+  if (st.submissions && st.submissions.length > 0) {
+    submissionContent = await fetchFromIPFS(st.submissions[0].storagePath || st.submissions[0].contentHash);
+  }
+  return {
+    ...st,
+    description: descText || st.description,
+    descriptionCID: st.description,
+    submissionContent
+  };
+}
+
+async function resolveTaskText(task: any) {
+  if (!task) return task;
+  const taskDescText = await fetchFromIPFS(task.description);
+  const resolvedSubtasks = await Promise.all(
+    (task.subtasks || []).map(resolveSubtaskText)
+  );
+  return {
+    ...task,
+    description: taskDescText || task.description,
+    descriptionCID: task.description,
+    subtasks: resolvedSubtasks
+  };
+}
 
 // Get all open subtasks for workers to claim
 router.get(["/open-subtasks", "/subtasks/open"], async (req, res) => {
   try {
-    // A subtask is open if it has no worker assigned
     const subtasks = await prisma.subtask.findMany({
       where: { worker: null },
-      include: { task: true }
+      include: { task: true },
+      orderBy: { createdAt: 'desc' }
     });
-    res.json(subtasks);
+    const resolved = await Promise.all(
+      subtasks.map(async (st) => {
+        const descText = await fetchFromIPFS(st.description);
+        const taskDescText = st.task ? await fetchFromIPFS(st.task.description) : "";
+        return {
+          ...st,
+          description: descText || st.description,
+          descriptionCID: st.description,
+          task: st.task ? { ...st.task, description: taskDescText || st.task.description } : st.task
+        };
+      })
+    );
+    res.json(resolved);
   } catch (error) {
     console.error("Error fetching subtasks:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -29,7 +71,8 @@ router.get("/customer/:address", async (req, res) => {
         subtasks: true
       }
     });
-    res.json(tasks);
+    const resolved = await Promise.all(tasks.map(resolveTaskText));
+    res.json(resolved);
   } catch (error) {
     console.error("Error fetching customer tasks:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -45,7 +88,8 @@ router.get("/worker/:address", async (req, res) => {
       orderBy: { createdAt: 'desc' },
       include: { task: true }
     });
-    res.json(subtasks);
+    const resolved = await Promise.all(subtasks.map(resolveSubtaskText));
+    res.json(resolved);
   } catch (error) {
     console.error("Error fetching worker tasks:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -68,7 +112,8 @@ router.get("/:taskId", async (req, res) => {
     });
     
     if (!task) return res.status(404).json({ error: "Task not found" });
-    res.json(task);
+    const resolved = await resolveTaskText(task);
+    res.json(resolved);
   } catch (error) {
     console.error("Error fetching task:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -93,10 +138,12 @@ router.get(["/worker-profile/:address", "/workers/:address"], async (req, res) =
       include: { task: true }
     });
 
+    const resolvedSubtasks = await Promise.all(claimedSubtasks.map(resolveSubtaskText));
+
     res.json({
       address,
       profile,
-      claimedSubtasks,
+      claimedSubtasks: resolvedSubtasks,
       ...profile
     });
   } catch (error) {

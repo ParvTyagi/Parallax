@@ -5,7 +5,7 @@ export const API_URL =
     : "http://localhost:3000");
 
 export const TASK_MANAGER_ADDRESS =
-  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0x8a50d0208c719cBB92094f3A18A072Ce37cad974";
+  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0xD243c9ADbC4f4E409091eeAEd533393AFE9199EE";
 
 export const TASK_MANAGER_ABI = [
   {
@@ -48,106 +48,6 @@ export const TASK_MANAGER_ABI = [
     "inputs": [
       {
         "indexed": true,
-        "internalType": "address",
-        "name": "worker",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "int256",
-        "name": "newScore",
-        "type": "int256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "successfulTasks",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "failedTasks",
-        "type": "uint256"
-      }
-    ],
-    "name": "ReputationUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "worker",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "newTotal",
-        "type": "uint256"
-      }
-    ],
-    "name": "StakeDeposited",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "worker",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "StakeSlashed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "worker",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "newTotal",
-        "type": "uint256"
-      }
-    ],
-    "name": "StakeWithdrawn",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
         "internalType": "bytes32",
         "name": "taskId",
         "type": "bytes32"
@@ -160,9 +60,9 @@ export const TASK_MANAGER_ABI = [
       },
       {
         "indexed": false,
-        "internalType": "string",
-        "name": "submissionCID",
-        "type": "string"
+        "internalType": "bytes32",
+        "name": "submissionHash",
+        "type": "bytes32"
       }
     ],
     "name": "SubmissionProofRecorded",
@@ -285,6 +185,31 @@ export const TASK_MANAGER_ABI = [
       {
         "indexed": false,
         "internalType": "uint256",
+        "name": "refundedAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "TaskCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "creator",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
         "name": "budget",
         "type": "uint256"
       },
@@ -297,6 +222,19 @@ export const TASK_MANAGER_ABI = [
     ],
     "name": "TaskCreated",
     "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "cancelTask",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
   {
     "inputs": [
@@ -322,11 +260,6 @@ export const TASK_MANAGER_ABI = [
         "internalType": "string",
         "name": "description",
         "type": "string"
-      },
-      {
-        "internalType": "int256",
-        "name": "minReputation",
-        "type": "int256"
       },
       {
         "components": [
@@ -431,21 +364,14 @@ export const TASK_MANAGER_ABI = [
         "type": "bytes32"
       },
       {
-        "internalType": "string",
-        "name": "submissionCID",
-        "type": "string"
+        "internalType": "bytes32",
+        "name": "submissionHash",
+        "type": "bytes32"
       }
     ],
     "name": "recordSubmissionProof",
     "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "stake",
-    "outputs": [],
-    "stateMutability": "payable",
     "type": "function"
   },
   {
@@ -479,9 +405,9 @@ export const TASK_MANAGER_ABI = [
         "type": "uint8"
       },
       {
-        "internalType": "string",
-        "name": "submissionCID",
-        "type": "string"
+        "internalType": "bytes32",
+        "name": "submissionHash",
+        "type": "bytes32"
       },
       {
         "internalType": "uint8",
@@ -528,43 +454,17 @@ export const TASK_MANAGER_ABI = [
         "type": "uint256"
       },
       {
-        "internalType": "int256",
-        "name": "minReputation",
-        "type": "int256"
+        "internalType": "bool",
+        "name": "exists",
+        "type": "bool"
       },
       {
         "internalType": "bool",
-        "name": "exists",
+        "name": "cancelled",
         "type": "bool"
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalProtocolRevenue",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "unstake",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -593,54 +493,6 @@ export const TASK_MANAGER_ABI = [
     "name": "verifySubtask",
     "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "name": "workerProfiles",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "successfulTasks",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "failedTasks",
-        "type": "uint256"
-      },
-      {
-        "internalType": "int256",
-        "name": "reputationScore",
-        "type": "int256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "name": "workerStakes",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   }
 ];
