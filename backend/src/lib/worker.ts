@@ -9,11 +9,28 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const TASK_MANAGER_ABI = [
-  "function verifySubtask(bytes32 taskId, bytes32 subtaskId, bool passed, uint8 score) external"
+  "function verifySubtask(bytes32 taskId, bytes32 subtaskId, bool passed, uint8 score) external",
+  "function releasePayout(bytes32 taskId, bytes32 subtaskId) external"
 ];
+
+function getOrchestratorContract() {
+  const rpcUrl = process.env.MONAD_RPC_URL;
+  const pk = process.env.ORCHESTRATOR_PRIVATE_KEY;
+  const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
+
+  if (!rpcUrl || !pk || !taskManagerAddress) {
+    throw new Error("Missing orchestrator credentials");
+  }
+
+  const formattedPk = pk.startsWith('0x') ? pk : `0x${pk}`;
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  const wallet = new ethers.Wallet(formattedPk, provider);
+  return new ethers.Contract(taskManagerAddress, TASK_MANAGER_ABI, wallet);
+}
 
 export async function startJobWorker() {
   console.log("Starting durable DB job worker...");
+  startPayoutSweeper();
 
   setInterval(async () => {
     try {
@@ -110,25 +127,42 @@ Return ONLY valid JSON:
   const passed = parsedJson.passed === true;
   const score = parsedJson.score || 0;
 
-  const rpcUrl = process.env.MONAD_RPC_URL;
-  const pk = process.env.ORCHESTRATOR_PRIVATE_KEY;
-  const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
-
-  if (!rpcUrl || !pk || !taskManagerAddress) {
-    throw new Error("Missing orchestrator credentials");
-  }
-
-  const formattedPk = pk.startsWith('0x') ? pk : `0x${pk}`;
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const wallet = new ethers.Wallet(formattedPk, provider);
-  const contract = new ethers.Contract(taskManagerAddress, TASK_MANAGER_ABI, wallet);
+  const contract = getOrchestratorContract();
 
   const tx = await contract.verifySubtask(subtask.taskId, subtaskId, passed, score);
   const receipt = await tx.wait();
-  
+
   if (!receipt || receipt.status !== 1) {
     throw new Error("Transaction reverted on-chain");
   }
+}
+
+/// Subtasks that passed AI verification sit in PENDING_RELEASE for a 48h creator dispute window.
+/// Nothing else calls releasePayout automatically, so this sweep finalizes payouts once that
+/// window elapses undisputed — otherwise funds and worker bonds would sit locked indefinitely.
+function startPayoutSweeper() {
+  setInterval(async () => {
+    try {
+      const releasable = await prisma.subtask.findMany({
+        where: { state: "PENDING_RELEASE", disputeDeadline: { lte: new Date() } }
+      });
+
+      if (releasable.length === 0) return;
+
+      const contract = getOrchestratorContract();
+      for (const subtask of releasable) {
+        try {
+          const tx = await contract.releasePayout(subtask.taskId, subtask.subtaskId);
+          await tx.wait();
+          console.log(`[PayoutSweeper] Released payout for subtask ${subtask.subtaskId}`);
+        } catch (err: any) {
+          console.error(`[PayoutSweeper] Failed to release ${subtask.subtaskId}:`, err.message);
+        }
+      }
+    } catch (e) {
+      console.error("Payout sweeper error:", e);
+    }
+  }, 60000); // Check once a minute
 }
 
 async function handleAggregate(payload: { taskId: string }) {

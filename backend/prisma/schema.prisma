@@ -7,34 +7,60 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TaskStatus {
+  PENDING
+  ACTIVE
+  AWAITING_VERIFICATION
+  IN_DISPUTE
+  SYNTHESIZING
+  COMPLETED
+  CANCELLED
+}
+
+enum SubtaskState {
+  CREATED
+  CLAIMED
+  SUBMITTED
+  AWAITING_VERIFICATION
+  PENDING_RELEASE
+  IN_DISPUTE
+  VERIFIED
+  REJECTED
+  CANCELLED
+}
+
 model Task {
-  id          String    @id @default(uuid())
-  taskId      String    @unique
+  id          String     @id @default(uuid())
+  taskId      String     @unique
   creator     String
   description String
   budget      String
-  status      String    // "PENDING", "ACTIVE", "COMPLETED"
-  solution    String?   @db.Text
-  createdAt   DateTime  @default(now())
+  status      TaskStatus @default(PENDING)
+  solution    String?    @db.Text
+  createdAt   DateTime   @default(now())
   subtasks    Subtask[]
 }
 
 model Subtask {
-  id             String       @id @default(uuid())
-  taskId         String
-  subtaskId      String       @unique
-  rangeLabel     String
-  description    String
-  reward         String
-  leaseDuration  Int?         // dynamic lease in seconds
-  worker         String?
-  state          String       // "CREATED", "CLAIMED", "SUBMITTED", "VERIFIED", "REJECTED"
-  submissionHash String?
-  resultUrl      String?
-  qualityScore   Int?
-  createdAt      DateTime     @default(now())
-  task           Task         @relation(fields: [taskId], references: [taskId])
-  submissions    Submission[]
+  id              String       @id @default(uuid())
+  taskId          String
+  subtaskId       String       @unique
+  rangeLabel      String
+  description     String
+  reward          String
+  bondAmount      String?      // MON bonded by the claiming worker
+  leaseDuration   Int?         // dynamic lease in seconds
+  worker          String?
+  state           SubtaskState @default(CREATED)
+  submissionHash  String?
+  resultUrl       String?
+  qualityScore    Int?
+  aiRationale     String?      @db.Text
+  aiFlags         String[]     @default([])
+  disputeDeadline DateTime?
+  createdAt       DateTime     @default(now())
+  task            Task         @relation(fields: [taskId], references: [taskId])
+  submissions     Submission[]
 }
 
 model Submission {

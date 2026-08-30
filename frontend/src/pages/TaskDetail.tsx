@@ -12,19 +12,33 @@ import {
   ExternalLink,
   Send,
   AlertTriangle,
+  AlertOctagon,
   Sparkles,
+  Gavel,
 } from "lucide-react";
 import { API_URL } from "../lib/constants";
 
 const STATE_BADGE: Record<string, { label: string; cls: string }> = {
-  OPEN:      { label: "OPEN", cls: "badge-info" },
-  CREATED:   { label: "OPEN", cls: "badge-info" },
-  CLAIMED:   { label: "CLAIMED", cls: "badge-warning" },
-  SUBMITTED: { label: "SUBMITTED", cls: "badge-secondary" },
-  VERIFIED:  { label: "VERIFIED", cls: "badge-success" },
-  FAILED:    { label: "FAILED", cls: "badge-error" },
-  REJECTED:  { label: "FAILED", cls: "badge-error" },
+  OPEN:            { label: "OPEN", cls: "badge-info" },
+  CREATED:         { label: "OPEN", cls: "badge-info" },
+  CLAIMED:         { label: "CLAIMED", cls: "badge-warning" },
+  SUBMITTED:       { label: "SUBMITTED", cls: "badge-secondary" },
+  PENDING_RELEASE: { label: "DISPUTE WINDOW", cls: "badge-warning" },
+  IN_DISPUTE:      { label: "IN DISPUTE", cls: "badge-error" },
+  VERIFIED:        { label: "VERIFIED", cls: "badge-success" },
+  FAILED:          { label: "FAILED", cls: "badge-error" },
+  REJECTED:        { label: "REJECTED", cls: "badge-error" },
 };
+
+function formatCountdown(deadline: string | null | undefined, now: number) {
+  if (!deadline) return { expired: true, label: "" };
+  const remainingMs = new Date(deadline).getTime() - now;
+  if (remainingMs <= 0) return { expired: true, label: "Window closed" };
+  const hours = Math.floor(remainingMs / 3_600_000);
+  const minutes = Math.floor((remainingMs % 3_600_000) / 60_000);
+  const seconds = Math.floor((remainingMs % 60_000) / 1000);
+  return { expired: false, label: `${hours}h ${minutes}m ${seconds}s remaining` };
+}
 
 const TaskDetail = () => {
   const { taskId } = useParams<{ taskId: string }>();
@@ -36,6 +50,10 @@ const TaskDetail = () => {
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [forfeitingId, setForfeitingId] = useState<string | null>(null);
+  const [disputingId, setDisputingId] = useState<string | null>(null);
+  const [releasingId, setReleasingId] = useState<string | null>(null);
+  const [bondAmount, setBondAmount] = useState<bigint | null>(null);
+  const [now, setNow] = useState(Date.now());
   const [statusMessages, setStatusMessages] = useState<Record<string, string>>({});
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [cancellingTask, setCancellingTask] = useState(false);
@@ -44,6 +62,18 @@ const TaskDetail = () => {
   useEffect(() => {
     fetchTask();
   }, [taskId]);
+
+  useEffect(() => {
+    if (!taskManager) return;
+    taskManager.workerBondAmount().then(setBondAmount).catch(() => setBondAmount(null));
+  }, [taskManager]);
+
+  useEffect(() => {
+    const hasPendingRelease = task?.subtasks?.some((st: any) => st.state === "PENDING_RELEASE");
+    if (!hasPendingRelease) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [task]);
 
   const fetchTask = async () => {
     try {
@@ -77,8 +107,9 @@ const TaskDetail = () => {
     }
     setClaimingId(subtaskId);
     try {
-      setMsg(subtaskId, "Confirming claim in MetaMask…");
-      const tx = await taskManager.claimSubtask(taskId, subtaskId);
+      const bond = bondAmount ?? (await taskManager.workerBondAmount());
+      setMsg(subtaskId, `Confirming claim + ${ethers.formatEther(bond)} MON bond in MetaMask…`);
+      const tx = await taskManager.claimSubtask(taskId, subtaskId, { value: bond });
       setMsg(subtaskId, "Transaction submitted! Waiting for confirmation…");
       await tx.wait();
       setMsg(subtaskId, "Claimed successfully! Refreshing state…");
@@ -162,7 +193,7 @@ const TaskDetail = () => {
       setMsg(
         subtaskId,
         data.passed
-          ? "AI approved the submission! On-chain reward released to worker."
+          ? "AI approved the submission! A 48-hour creator dispute window has started before payout releases."
           : `Evaluation Score: ${data.score}/100. ${data.reasons?.[0] || "Requirements not met."}`
       );
       setTimeout(() => {
@@ -177,7 +208,7 @@ const TaskDetail = () => {
   };
 
   const handleForfeit = async (subtaskId: string) => {
-    if (!window.confirm("Are you sure you want to forfeit this task? Your staked deposit will be slashed."))
+    if (!window.confirm("Are you sure you want to forfeit this task? Your MON bond will be returned in full."))
       return;
     if (!taskManager) {
       setMsg(subtaskId, "Wallet not connected. Please connect your Web3 wallet.");
@@ -199,6 +230,54 @@ const TaskDetail = () => {
       setMsg(subtaskId, "Error: " + (e.reason || e.info?.error?.message || e.message || "Forfeit failed"));
     } finally {
       setForfeitingId(null);
+    }
+  };
+
+  const handleDispute = async (subtaskId: string) => {
+    if (!window.confirm("Dispute this submission? An admin will review and decide whether the worker or you are paid."))
+      return;
+    if (!taskManager) {
+      setMsg(subtaskId, "Wallet not connected. Please connect your Web3 wallet.");
+      return;
+    }
+    setDisputingId(subtaskId);
+    try {
+      setMsg(subtaskId, "Raising dispute on Monad…");
+      const tx = await taskManager.disputeTask(taskId, subtaskId);
+      await tx.wait();
+      setMsg(subtaskId, "Dispute raised. An admin will resolve this shortly.");
+      setTimeout(() => {
+        fetchTask();
+        clearMsg(subtaskId);
+      }, 2000);
+    } catch (e: any) {
+      console.error("Dispute error:", e);
+      setMsg(subtaskId, "Error: " + (e.reason || e.info?.error?.message || e.message || "Dispute failed"));
+    } finally {
+      setDisputingId(null);
+    }
+  };
+
+  const handleReleasePayout = async (subtaskId: string) => {
+    if (!taskManager) {
+      setMsg(subtaskId, "Wallet not connected. Please connect your Web3 wallet.");
+      return;
+    }
+    setReleasingId(subtaskId);
+    try {
+      setMsg(subtaskId, "Releasing payout on Monad…");
+      const tx = await taskManager.releasePayout(taskId, subtaskId);
+      await tx.wait();
+      setMsg(subtaskId, "Payout released to worker!");
+      setTimeout(() => {
+        fetchTask();
+        clearMsg(subtaskId);
+      }, 2000);
+    } catch (e: any) {
+      console.error("Release payout error:", e);
+      setMsg(subtaskId, "Error: " + (e.reason || e.info?.error?.message || e.message || "Release failed"));
+    } finally {
+      setReleasingId(null);
     }
   };
 
@@ -441,9 +520,13 @@ const TaskDetail = () => {
             const isWorker = Boolean(account && workerAddr && account.toLowerCase() === workerAddr.toLowerCase());
             
             const isOpen = (st.state === "OPEN" || st.state === "CREATED") && !workerAddr;
-            const isClaimed = st.state === "CLAIMED" || (Boolean(workerAddr) && st.state !== "VERIFIED" && st.state !== "SUBMITTED");
+            const isClaimed = st.state === "CLAIMED";
             const isSubmitted = st.state === "SUBMITTED";
+            const isPendingRelease = st.state === "PENDING_RELEASE";
+            const isDisputed = st.state === "IN_DISPUTE" || st.state === "DISPUTED";
             const isVerified = st.state === "VERIFIED";
+            const isCreator = Boolean(account && (task.creator || task.customerAddress)?.toLowerCase() === account.toLowerCase());
+            const { expired: disputeExpired, label: countdownLabel } = formatCountdown(st.disputeDeadline, now);
 
             const stateMeta = STATE_BADGE[st.state] || (isOpen ? { label: "OPEN", cls: "badge-info" } : { label: st.state, cls: "badge-ghost" });
 
@@ -654,6 +737,54 @@ const TaskDetail = () => {
                       </button>
                     </div>
                   )}
+
+                  {/* PENDING_RELEASE State: 48h dispute window */}
+                  {isPendingRelease && (
+                    <div className="pt-2 border-t border-base-300/60 space-y-3">
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-warning/10 border border-warning/20 text-warning text-xs font-medium">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4" />
+                          <span>AI approved. Payout releases automatically when the dispute window closes.</span>
+                        </div>
+                        <span className="font-mono font-bold shrink-0">
+                          {disputeExpired ? "Window closed" : countdownLabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        {isCreator && !disputeExpired && (
+                          <button
+                            type="button"
+                            onClick={() => handleDispute(st.subtaskId)}
+                            disabled={disputingId === st.subtaskId}
+                            className="btn btn-outline btn-error btn-xs font-semibold gap-1.5"
+                          >
+                            <Gavel className="w-3.5 h-3.5" />
+                            {disputingId === st.subtaskId ? "Raising dispute…" : "Dispute Submission"}
+                          </button>
+                        )}
+                        {disputeExpired && (
+                          <button
+                            type="button"
+                            onClick={() => handleReleasePayout(st.subtaskId)}
+                            disabled={releasingId === st.subtaskId}
+                            className="btn btn-neutral btn-sm font-bold text-xs ml-auto"
+                          >
+                            {releasingId === st.subtaskId ? "Releasing…" : "Release Payout"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* IN_DISPUTE State */}
+                  {isDisputed && (
+                    <div className="pt-2 border-t border-base-300/60">
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-error/10 border border-error/20 text-error text-xs font-medium">
+                        <AlertOctagon className="w-4 h-4" />
+                        <span>Disputed by the creator. Awaiting admin resolution — funds and bond remain locked until then.</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -728,7 +859,7 @@ const TaskDetail = () => {
                 Submissions are pinned to IPFS and evaluated by the Gemini AI Orchestrator against the original master task parameters.
               </p>
               <p className="text-[11px] text-base-content/50">
-                Upon meeting verification criteria (score ≥ 70/100), the protocol automatically executes the release of escrowed funds directly to the worker's wallet.
+                A passing score (≥ 70/100) starts a 48-hour dispute window. The creator can challenge the result during that window; otherwise, funds and the worker's bond release automatically once it closes.
               </p>
             </div>
           </div>

@@ -8,15 +8,43 @@ const TASK_MANAGER_ABI = [
   "event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget, string description)",
   "event TaskCancelled(bytes32 indexed taskId, address indexed creator, uint256 refundedAmount)",
   "event SubtaskCreated(bytes32 indexed taskId, bytes32 indexed subtaskId, string rangeLabel, string description, uint256 reward, uint256 leaseDuration)",
-  "event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker)",
-  "event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId)",
+  "event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker, uint256 bondAmount)",
+  "event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId, bool slashed)",
   "event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, bytes32 submissionHash)",
-  "event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score)",
+  "event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score, uint256 disputeDeadline)",
+  "event PayoutReleased(bytes32 indexed taskId, bytes32 indexed subtaskId, address worker)",
+  "event DisputeRaised(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed creator)",
+  "event DisputeResolved(bytes32 indexed taskId, bytes32 indexed subtaskId, bool workerWins)",
   "event ReputationUpdated(address indexed worker, int256 newScore, uint256 successfulTasks, uint256 failedTasks)"
 ];
 
 // We will simulate AI aggregation off-chain here when all tasks are verified.
 import { geminiModel } from "./gemini";
+
+/// Pushes an AGGREGATE job once every subtask on a task has reached a final,
+/// paid-out state (VERIFIED via releasePayout or a worker-won dispute).
+async function maybeQueueAggregate(taskId: string) {
+  const task = await prisma.task.findUnique({
+    where: { taskId },
+    include: { subtasks: true }
+  });
+  if (!task || task.subtasks.length === 0) return;
+
+  const allFinal = task.subtasks.every(st => st.state === "VERIFIED" || st.state === "REJECTED");
+  const anyVerified = task.subtasks.some(st => st.state === "VERIFIED");
+
+  if (allFinal && anyVerified && task.status !== "COMPLETED" && task.status !== "SYNTHESIZING") {
+    console.log(`[Queue] All subtasks finalized for task ${taskId}! Pushing AGGREGATE job...`);
+    await prisma.task.update({ where: { taskId }, data: { status: "SYNTHESIZING" } });
+    await prisma.job.create({
+      data: {
+        type: "AGGREGATE",
+        payload: { taskId },
+        status: "PENDING"
+      }
+    });
+  }
+}
 
 export async function setupChainListeners() {
   const rpcUrl = process.env.MONAD_RPC_URL;
@@ -40,15 +68,15 @@ export async function setupChainListeners() {
       if (lastCheckedBlock === -1) {
         lastCheckedBlock = currentBlock - 50; // On first run, check last 50 blocks
       }
-      
+
       if (currentBlock <= lastCheckedBlock) return;
 
       // Query all events for the contract in the block range
       const events = await contract.queryFilter("*", lastCheckedBlock + 1, currentBlock);
-      
+
       for (const event of events) {
         if (!('eventName' in event)) continue;
-        
+
         try {
           if (event.eventName === "TaskCreated") {
             const [taskId, creator, budget, description] = event.args;
@@ -95,19 +123,19 @@ export async function setupChainListeners() {
             });
           }
           else if (event.eventName === "SubtaskClaimed") {
-            const [taskId, subtaskId, worker] = event.args;
-            console.log(`Event SubtaskClaimed: ${subtaskId} by ${worker}`);
+            const [taskId, subtaskId, worker, bondAmount] = event.args;
+            console.log(`Event SubtaskClaimed: ${subtaskId} by ${worker} (bond: ${ethers.formatEther(bondAmount)} MON)`);
             await prisma.subtask.updateMany({
               where: { subtaskId: subtaskId },
-              data: { state: "CLAIMED", worker: worker }
+              data: { state: "CLAIMED", worker: worker, bondAmount: ethers.formatEther(bondAmount) }
             });
           }
           else if (event.eventName === "ClaimForfeited") {
-            const [taskId, subtaskId] = event.args;
-            console.log(`Event ClaimForfeited: ${subtaskId}`);
+            const [taskId, subtaskId, slashed] = event.args;
+            console.log(`Event ClaimForfeited: ${subtaskId} (slashed: ${slashed})`);
             await prisma.subtask.updateMany({
               where: { subtaskId: subtaskId },
-              data: { state: "CREATED", worker: null }
+              data: { state: "CREATED", worker: null, bondAmount: null }
             });
           }
           else if (event.eventName === "SubmissionProofRecorded") {
@@ -128,37 +156,71 @@ export async function setupChainListeners() {
             console.log(`[Queue] Pushed VERIFY job for ${subtaskId}`);
           }
           else if (event.eventName === "SubtaskVerified") {
-            const [taskId, subtaskId, passed, score] = event.args;
+            // `passed` here only reflects the AI's verdict, NOT a final payout — a pass moves the
+            // subtask into PENDING_RELEASE, where it sits for 48h so the creator can dispute it.
+            const [taskId, subtaskId, passed, score, disputeDeadline] = event.args;
             console.log(`Event SubtaskVerified: ${subtaskId} (passed: ${passed})`);
             await prisma.subtask.updateMany({
               where: { subtaskId: subtaskId },
-              data: { 
-                state: passed ? "VERIFIED" : "REJECTED",
-                worker: passed ? undefined : null,
-                qualityScore: Number(score)
+              data: passed
+                ? {
+                    state: "PENDING_RELEASE",
+                    qualityScore: Number(score),
+                    disputeDeadline: new Date(Number(disputeDeadline) * 1000)
+                  }
+                : {
+                    state: "CREATED",
+                    worker: null,
+                    bondAmount: null,
+                    submissionHash: null,
+                    qualityScore: Number(score)
+                  }
+            });
+          }
+          else if (event.eventName === "PayoutReleased") {
+            const [taskId, subtaskId, worker] = event.args;
+            console.log(`Event PayoutReleased: ${subtaskId} to ${worker}`);
+            await prisma.subtask.updateMany({
+              where: { subtaskId: subtaskId },
+              data: { state: "VERIFIED", bondAmount: null }
+            });
+            await maybeQueueAggregate(taskId);
+          }
+          else if (event.eventName === "DisputeRaised") {
+            const [taskId, subtaskId, creator] = event.args;
+            console.log(`Event DisputeRaised: ${subtaskId} by ${creator}`);
+            await prisma.subtask.updateMany({
+              where: { subtaskId: subtaskId },
+              data: { state: "IN_DISPUTE" }
+            });
+            await prisma.task.updateMany({
+              where: { taskId: taskId },
+              data: { status: "IN_DISPUTE" }
+            });
+          }
+          else if (event.eventName === "DisputeResolved") {
+            const [taskId, subtaskId, workerWins] = event.args;
+            console.log(`Event DisputeResolved: ${subtaskId} (workerWins: ${workerWins})`);
+            await prisma.subtask.updateMany({
+              where: { subtaskId: subtaskId },
+              data: {
+                state: workerWins ? "VERIFIED" : "REJECTED",
+                bondAmount: null,
+                worker: workerWins ? undefined : null
               }
             });
 
-            // Check if master task is complete for aggregation
-            if (passed) {
-              const task = await prisma.task.findUnique({
-                where: { taskId: taskId },
-                include: { subtasks: true }
+            // Restore the task's status from IN_DISPUTE if no other subtask is still disputed.
+            const task = await prisma.task.findUnique({ where: { taskId }, include: { subtasks: true } });
+            if (task && !task.subtasks.some(st => st.state === "IN_DISPUTE")) {
+              await prisma.task.updateMany({
+                where: { taskId, status: "IN_DISPUTE" },
+                data: { status: "ACTIVE" }
               });
+            }
 
-              if (task) {
-                const allVerified = task.subtasks.every(st => st.state === "VERIFIED");
-                if (allVerified && task.status !== "COMPLETED") {
-                  console.log(`[Queue] All subtasks verified for task ${taskId}! Pushing AGGREGATE job...`);
-                  await prisma.job.create({
-                    data: {
-                      type: "AGGREGATE",
-                      payload: { taskId: taskId },
-                      status: "PENDING"
-                    }
-                  });
-                }
-              }
+            if (workerWins) {
+              await maybeQueueAggregate(taskId);
             }
           }
           else if (event.eventName === "ReputationUpdated") {
@@ -166,7 +228,7 @@ export async function setupChainListeners() {
             console.log(`Event ReputationUpdated: ${worker} (score: ${newScore})`);
             await prisma.workerProfile.upsert({
               where: { address: worker },
-              update: { 
+              update: {
                 reputationScore: Number(newScore),
                 successfulTasks: Number(successfulTasks),
                 failedTasks: Number(failedTasks)

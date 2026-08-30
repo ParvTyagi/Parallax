@@ -5,12 +5,13 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deploying contracts with the account:", deployer ? await deployer.getAddress() : "UNKNOWN");
 
-  // Hardcoded orchestrator and treasury for hackathon demo
+  // Hardcoded orchestrator, treasury and admin for testnet deployment
   const orchestratorAddress = deployer ? await deployer.getAddress() : "0x0000000000000000000000000000000000000000";
   const platformTreasury = "0xf302D2f179baf42d6F02E337B25Cf882499b39e6";
+  const adminAddress = process.env.ADMIN_ADDRESS || orchestratorAddress;
 
   const TaskManager = await ethers.getContractFactory("ParallaxTaskManager");
-  const taskManager = await TaskManager.deploy(orchestratorAddress, platformTreasury);
+  const taskManager = await TaskManager.deploy(orchestratorAddress, platformTreasury, adminAddress);
   await taskManager.waitForDeployment();
   const taskManagerAddress = await taskManager.getAddress();
   console.log("ParallaxTaskManager deployed to:", taskManagerAddress);
@@ -47,7 +48,8 @@ export const TASK_MANAGER_ABI = ${JSON.stringify(artifact.abi, null, 2)};
   const backendEnvPath = path.join(__dirname, "../../backend/.env");
   if (fs.existsSync(backendEnvPath)) {
     let envContent = fs.readFileSync(backendEnvPath, "utf-8");
-    envContent = envContent.replace(/TASK_MANAGER_ADDRESS=.*/g, `TASK_MANAGER_ADDRESS=${taskManagerAddress}`);
+    // Note: the backend reads this as TASKMANAGER_ADDRESS (no underscore between TASK and MANAGER).
+    envContent = envContent.replace(/TASKMANAGER_ADDRESS=.*/g, `TASKMANAGER_ADDRESS=${taskManagerAddress}`);
     fs.writeFileSync(backendEnvPath, envContent);
     console.log("Updated backend .env");
   }

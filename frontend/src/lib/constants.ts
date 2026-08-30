@@ -5,7 +5,7 @@ export const API_URL =
     : "http://localhost:3000");
 
 export const TASK_MANAGER_ADDRESS =
-  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0xD243c9ADbC4f4E409091eeAEd533393AFE9199EE";
+  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0x7371e2777cD7Cbf9d3bE33F780122C1C9C9A4F20";
 
 export const TASK_MANAGER_ABI = [
   {
@@ -19,10 +19,34 @@ export const TASK_MANAGER_ABI = [
         "internalType": "address",
         "name": "_platformTreasury",
         "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_admin",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
     "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousAdmin",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newAdmin",
+        "type": "address"
+      }
+    ],
+    "name": "AdminUpdated",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -38,9 +62,90 @@ export const TASK_MANAGER_ABI = [
         "internalType": "bytes32",
         "name": "subtaskId",
         "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "slashed",
+        "type": "bool"
       }
     ],
     "name": "ClaimForfeited",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "subtaskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "creator",
+        "type": "address"
+      }
+    ],
+    "name": "DisputeRaised",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "subtaskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "workerWins",
+        "type": "bool"
+      }
+    ],
+    "name": "DisputeResolved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "subtaskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "worker",
+        "type": "address"
+      }
+    ],
+    "name": "PayoutReleased",
     "type": "event"
   },
   {
@@ -88,6 +193,12 @@ export const TASK_MANAGER_ABI = [
         "internalType": "address",
         "name": "worker",
         "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "bondAmount",
+        "type": "uint256"
       }
     ],
     "name": "SubtaskClaimed",
@@ -162,6 +273,12 @@ export const TASK_MANAGER_ABI = [
         "internalType": "uint8",
         "name": "score",
         "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "disputeDeadline",
+        "type": "uint256"
       }
     ],
     "name": "SubtaskVerified",
@@ -224,6 +341,51 @@ export const TASK_MANAGER_ABI = [
     "type": "event"
   },
   {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "previousAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "WorkerBondAmountUpdated",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "DISPUTE_WINDOW",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "admin",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "bytes32",
@@ -251,7 +413,7 @@ export const TASK_MANAGER_ABI = [
     ],
     "name": "claimSubtask",
     "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "payable",
     "type": "function"
   },
   {
@@ -292,6 +454,24 @@ export const TASK_MANAGER_ABI = [
     "name": "createTask",
     "outputs": [],
     "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "subtaskId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "disputeTask",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -378,6 +558,73 @@ export const TASK_MANAGER_ABI = [
     "inputs": [
       {
         "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "subtaskId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "releasePayout",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "subtaskId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bool",
+        "name": "workerWins",
+        "type": "bool"
+      }
+    ],
+    "name": "resolveDispute",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_admin",
+        "type": "address"
+      }
+    ],
+    "name": "setAdmin",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "setWorkerBondAmount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
         "name": "",
         "type": "bytes32"
       }
@@ -397,6 +644,11 @@ export const TASK_MANAGER_ABI = [
       {
         "internalType": "uint256",
         "name": "reward",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "bondAmount",
         "type": "uint256"
       },
       {
@@ -427,6 +679,11 @@ export const TASK_MANAGER_ABI = [
       {
         "internalType": "uint256",
         "name": "claimTime",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "disputeDeadline",
         "type": "uint256"
       }
     ],
@@ -493,6 +750,19 @@ export const TASK_MANAGER_ABI = [
     "name": "verifySubtask",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "workerBondAmount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   }
 ];

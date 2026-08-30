@@ -95,7 +95,9 @@ const WorkerTasks = () => {
       return Number(b.taskId) - Number(a.taskId);
     });
 
-  const activeTasks = myTasks.filter((st) => st.state === "CLAIMED" || st.state === "SUBMITTED");
+  const activeTasks = myTasks.filter((st) =>
+    ["CLAIMED", "SUBMITTED", "PENDING_RELEASE", "IN_DISPUTE"].includes(st.state)
+  );
   const completedTasks = myTasks.filter((st) => st.state === "VERIFIED");
 
   if (loading) {
@@ -116,7 +118,7 @@ const WorkerTasks = () => {
             Freelancer Marketplace
           </h1>
           <p className="text-sm text-base-content/60 mt-1">
-            Claim AI-decomposed microtasks, stake MON, and earn instant on-chain rewards upon verification.
+            Claim AI-decomposed microtasks with a MON bond, then get paid once your work clears the 48-hour creator dispute window.
           </p>
         </div>
 
@@ -133,19 +135,13 @@ const WorkerTasks = () => {
               </div>
             </div>
 
-            <div className="px-3 border-r border-base-300">
+            <div className="px-3">
               <span className="text-[10px] font-bold text-base-content/40 uppercase block">Completed</span>
               <span className="font-mono font-bold text-base text-success">
                 {profile.successfulTasks ?? 0}
               </span>
             </div>
 
-            <div className="px-3">
-              <span className="text-[10px] font-bold text-base-content/40 uppercase block">Staked MON</span>
-              <span className="font-mono font-bold text-base text-base-content">
-                {Number(profile.stakedAmount || 0).toFixed(1)}
-              </span>
-            </div>
           </div>
         )}
       </div>
@@ -370,10 +366,16 @@ const WorkerTasks = () => {
                     <div className="flex justify-between items-center">
                       <span
                         className={`badge badge-sm font-mono font-bold ${
-                          st.state === "SUBMITTED" ? "badge-secondary" : "badge-warning"
+                          st.state === "SUBMITTED"
+                            ? "badge-secondary"
+                            : st.state === "PENDING_RELEASE"
+                            ? "badge-warning"
+                            : st.state === "IN_DISPUTE"
+                            ? "badge-error"
+                            : "badge-warning"
                         }`}
                       >
-                        {st.state}
+                        {st.state === "PENDING_RELEASE" ? "DISPUTE WINDOW" : st.state === "IN_DISPUTE" ? "IN DISPUTE" : st.state}
                       </span>
                       <span className="font-mono font-bold text-xs text-base-content">
                         {st.reward} MON
@@ -385,7 +387,15 @@ const WorkerTasks = () => {
                     </p>
 
                     <div className="flex justify-between items-center pt-2 border-t border-base-300/60 text-xs text-primary font-semibold">
-                      <span>{st.state === "SUBMITTED" ? "Awaiting AI Verification" : "Submit Deliverable"}</span>
+                      <span>
+                        {st.state === "SUBMITTED"
+                          ? "Awaiting AI Verification"
+                          : st.state === "PENDING_RELEASE"
+                          ? "In dispute window — payout pending"
+                          : st.state === "IN_DISPUTE"
+                          ? "Disputed — awaiting admin resolution"
+                          : "Submit Deliverable"}
+                      </span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </div>
                   </div>

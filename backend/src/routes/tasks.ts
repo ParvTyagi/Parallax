@@ -96,6 +96,22 @@ router.get("/worker/:address", async (req, res) => {
   }
 });
 
+// Get all subtasks currently disputed, for the admin resolution queue
+router.get("/disputes/open", async (req, res) => {
+  try {
+    const subtasks = await prisma.subtask.findMany({
+      where: { state: "IN_DISPUTE" },
+      orderBy: { createdAt: 'desc' },
+      include: { task: true }
+    });
+    const resolved = await Promise.all(subtasks.map(resolveSubtaskText));
+    res.json(resolved);
+  } catch (error) {
+    console.error("Error fetching open disputes:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Get a specific task and its full state for the execution visualizer
 router.get("/:taskId", async (req, res) => {
   try {
@@ -127,9 +143,9 @@ router.get(["/worker-profile/:address", "/workers/:address"], async (req, res) =
     let profile = await prisma.workerProfile.findUnique({
       where: { address }
     });
-    
+
     if (!profile) {
-      profile = { address, successfulTasks: 0, failedTasks: 0, reputationScore: 0, stakedAmount: "0" } as any;
+      profile = { address, successfulTasks: 0, failedTasks: 0, reputationScore: 0 } as any;
     }
 
     const claimedSubtasks = await prisma.subtask.findMany({
@@ -140,11 +156,18 @@ router.get(["/worker-profile/:address", "/workers/:address"], async (req, res) =
 
     const resolvedSubtasks = await Promise.all(claimedSubtasks.map(resolveSubtaskText));
 
+    // Bonds still locked on-chain: any subtask this worker holds that hasn't reached a final,
+    // bond-released state yet.
+    const activeBondTotal = claimedSubtasks
+      .filter((st) => ["CLAIMED", "SUBMITTED", "PENDING_RELEASE", "IN_DISPUTE"].includes(st.state))
+      .reduce((sum, st) => sum + Number(st.bondAmount || 0), 0);
+
     res.json({
       address,
-      profile,
+      profile: { ...profile, activeBondTotal },
       claimedSubtasks: resolvedSubtasks,
-      ...profile
+      ...profile,
+      activeBondTotal
     });
   } catch (error) {
     console.error("Failed to fetch worker profile:", error);

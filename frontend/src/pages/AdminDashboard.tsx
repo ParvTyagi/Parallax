@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWeb3 } from "../contexts/Web3Context";
 import { ethers } from "ethers";
+import { API_URL } from "../lib/constants";
 import {
   Landmark,
   ShieldCheck,
-  Download,
   AlertTriangle,
-  CheckCircle2,
+  Gavel,
+  Settings2,
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -14,12 +15,33 @@ export default function AdminDashboard() {
   const [balance, setBalance] = useState("0.00");
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
-  const [withdrawing, setWithdrawing] = useState(false);
-  const [withdrawStatus, setWithdrawStatus] = useState<"idle" | "processing" | "done">("idle");
+  const [adminAddress, setAdminAddress] = useState<string | null>(null);
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [bondAmount, setBondAmount] = useState<string | null>(null);
+  const [newBondAmount, setNewBondAmount] = useState("");
+  const [updatingBond, setUpdatingBond] = useState(false);
+
+  const fetchDisputes = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/tasks/disputes/open`);
+      if (res.ok) setDisputes(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
   useEffect(() => {
     checkAdmin();
   }, [account, taskManager]);
+
+  useEffect(() => {
+    if (isOwner) {
+      fetchDisputes();
+      const interval = setInterval(fetchDisputes, 8000);
+      return () => clearInterval(interval);
+    }
+  }, [isOwner, fetchDisputes]);
 
   const checkAdmin = async () => {
     if (!account || !taskManager) {
@@ -28,10 +50,14 @@ export default function AdminDashboard() {
     }
     try {
       setLoading(true);
-      const adminAddress = "0xf302D2f179baf42d6F02E337B25Cf882499b39e6".toLowerCase();
-      setIsOwner(account.toLowerCase() === adminAddress);
+      // The admin role is read directly from the contract — it is a distinct address from the
+      // platform treasury and can be rotated on-chain via setAdmin().
+      const onChainAdmin: string = await taskManager.admin();
+      setAdminAddress(onChainAdmin);
+      const owner = account.toLowerCase() === onChainAdmin.toLowerCase();
+      setIsOwner(owner);
 
-      if (account.toLowerCase() === adminAddress) {
+      if (owner) {
         const escrowAddress = await taskManager.escrow();
         const escrowContract = new ethers.Contract(
           escrowAddress,
@@ -41,6 +67,9 @@ export default function AdminDashboard() {
         const slashRev = await taskManager.totalProtocolRevenue();
         const feeRev = await escrowContract.totalProtocolRevenue();
         setBalance(ethers.formatEther(slashRev + feeRev));
+
+        const bond = await taskManager.workerBondAmount();
+        setBondAmount(ethers.formatEther(bond));
       }
     } catch (e) {
       console.error(e);
@@ -49,13 +78,36 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleWithdraw = async () => {
-    setWithdrawing(true);
-    setWithdrawStatus("processing");
-    setTimeout(() => {
-      setWithdrawStatus("done");
-      setWithdrawing(false);
-    }, 1500);
+  const handleResolve = async (taskId: string, subtaskId: string, workerWins: boolean) => {
+    if (!taskManager) return;
+    if (!window.confirm(`Resolve in favor of the ${workerWins ? "worker" : "creator"}?`)) return;
+    setResolvingId(subtaskId);
+    try {
+      const tx = await taskManager.resolveDispute(taskId, subtaskId, workerWins);
+      await tx.wait();
+      await fetchDisputes();
+    } catch (e: any) {
+      console.error("Resolve dispute error:", e);
+      alert(e.reason || e.info?.error?.message || e.message || "Resolution failed");
+    } finally {
+      setResolvingId(null);
+    }
+  };
+
+  const handleUpdateBond = async () => {
+    if (!taskManager || !newBondAmount) return;
+    setUpdatingBond(true);
+    try {
+      const tx = await taskManager.setWorkerBondAmount(ethers.parseEther(newBondAmount));
+      await tx.wait();
+      setBondAmount(newBondAmount);
+      setNewBondAmount("");
+    } catch (e: any) {
+      console.error("Update bond error:", e);
+      alert(e.reason || e.info?.error?.message || e.message || "Update failed");
+    } finally {
+      setUpdatingBond(false);
+    }
   };
 
   if (loading) {
@@ -76,7 +128,15 @@ export default function AdminDashboard() {
           </div>
           <h3 className="text-base font-bold text-base-content">Access Restricted</h3>
           <p className="text-xs text-base-content/50">
-            This section is restricted to the Parallax protocol administrator wallet (<code className="font-mono text-[11px]">0xf302…b39e6</code>).
+            This section is restricted to the ParallaxTaskManager's on-chain{" "}
+            <code className="font-mono text-[11px]">admin()</code> address
+            {adminAddress ? (
+              <>
+                {" "}(<code className="font-mono text-[11px]">{adminAddress.slice(0, 8)}…{adminAddress.slice(-6)}</code>).
+              </>
+            ) : (
+              "."
+            )}
           </p>
         </div>
       </div>
@@ -94,10 +154,10 @@ export default function AdminDashboard() {
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-base-content">
-            Protocol Treasury
+            Protocol Administration
           </h1>
           <p className="text-xs md:text-sm text-base-content/60 mt-0.5">
-            Real-time protocol revenue from smart contract platform fees and slashed stakes on Monad.
+            Dispute resolution, bond configuration, and protocol revenue on Monad.
           </p>
         </div>
       </div>
@@ -107,12 +167,14 @@ export default function AdminDashboard() {
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-5">
             <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
-              Accumulated Revenue
+              Lifetime Protocol Revenue
             </span>
             <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
               {balance} <span className="text-sm font-sans font-medium text-base-content/50">MON</span>
             </div>
-            <span className="text-[11px] text-base-content/40">From all verified escrows</span>
+            <span className="text-[11px] text-base-content/40">
+              Already forwarded to the treasury wallet — nothing sits locked in-contract to withdraw.
+            </span>
           </div>
         </div>
 
@@ -136,66 +198,101 @@ export default function AdminDashboard() {
             <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
               100%
             </div>
-            <span className="text-[11px] text-base-content/40">Of forfeited worker stakes</span>
+            <span className="text-[11px] text-base-content/40">Of slashed worker bonds</span>
           </div>
         </div>
       </div>
 
-      {/* ─── Main Grid: Withdrawal & Revenue Breakdown ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Withdrawal Card */}
-        <div className="card bg-neutral text-neutral-content shadow-md">
-          <div className="card-body p-6 md:p-8 gap-5">
-            <div className="flex items-center gap-2.5">
-              <Landmark className="w-5 h-5 text-accent" />
-              <h2 className="text-base font-bold text-neutral-content">Treasury Cold Storage Withdrawal</h2>
-            </div>
-
-            <div className="bg-neutral-content/10 border border-neutral-content/10 rounded-xl p-4">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-content/60 block mb-1">
-                Available to Sweep
-              </span>
-              <p className="text-3xl md:text-4xl font-mono font-bold text-neutral-content">
-                {balance} <span className="text-lg text-neutral-content/50">MON</span>
-              </p>
-            </div>
-
-            <p className="text-xs text-neutral-content/70 leading-relaxed">
-              Protocol fee revenue accumulates directly in the treasury smart contract. Executing a withdrawal transfers unlocked revenue to the designated protocol governance cold storage wallet.
-            </p>
-
-            <button
-              onClick={handleWithdraw}
-              disabled={withdrawing}
-              className="btn btn-primary font-bold text-xs gap-2"
-            >
-              {withdrawing ? (
-                <span className="flex items-center gap-2">
-                  <span className="loading loading-spinner loading-xs" />
-                  Executing Cold Storage Sweep…
-                </span>
-              ) : (
-                <>
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Withdraw Available Funds</span>
-                </>
-              )}
-            </button>
-
-            {withdrawStatus === "done" && (
-              <div role="alert" className="alert alert-success text-xs py-2.5">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>Withdrawal transaction submitted to Monad network.</span>
-              </div>
+      {/* ─── Dispute Resolution Queue ─── */}
+      <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+        <div className="card-body p-6 gap-4">
+          <div className="flex items-center gap-2">
+            <Gavel className="w-4 h-4 text-error" />
+            <h2 className="text-base font-bold text-base-content">Dispute Resolution Queue</h2>
+            {disputes.length > 0 && (
+              <span className="badge badge-error badge-sm font-mono">{disputes.length}</span>
             )}
+          </div>
+
+          {disputes.length === 0 ? (
+            <p className="text-xs text-base-content/50 py-4">No open disputes.</p>
+          ) : (
+            <div className="space-y-3">
+              {disputes.map((d) => (
+                <div key={d.subtaskId} className="border border-base-300 rounded-xl p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-base-content">{d.description}</p>
+                      <p className="text-[11px] text-base-content/50 font-mono mt-0.5">
+                        Task #{d.taskId?.slice(0, 8)} · Worker {d.worker?.slice(0, 8)}…{d.worker?.slice(-4)}
+                      </p>
+                    </div>
+                    <span className="badge badge-neutral font-mono text-xs shrink-0">{d.reward} MON</span>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t border-base-300/60">
+                    <button
+                      type="button"
+                      onClick={() => handleResolve(d.taskId, d.subtaskId, true)}
+                      disabled={resolvingId === d.subtaskId}
+                      className="btn btn-success btn-xs font-semibold"
+                    >
+                      Rule for Worker
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResolve(d.taskId, d.subtaskId, false)}
+                      disabled={resolvingId === d.subtaskId}
+                      className="btn btn-error btn-xs font-semibold"
+                    >
+                      Rule for Creator
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Bond Configuration & Revenue Mechanics ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card bg-base-100 border border-base-300/80 shadow-xs">
+          <div className="card-body p-6 gap-4">
+            <div className="flex items-center gap-2">
+              <Settings2 className="w-4 h-4 text-info" />
+              <h2 className="text-base font-bold text-base-content">Worker Bond Amount</h2>
+            </div>
+            <p className="text-xs text-base-content/60">
+              MON a worker must post to claim any subtask. Current: <span className="font-mono font-bold text-base-content">{bondAmount ?? "…"} MON</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                placeholder="New bond amount (MON)"
+                className="input input-sm input-bordered flex-1 text-xs"
+                value={newBondAmount}
+                onChange={(e) => setNewBondAmount(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={handleUpdateBond}
+                disabled={updatingBond || !newBondAmount}
+                className="btn btn-neutral btn-sm text-xs font-semibold"
+              >
+                {updatingBond ? "Updating…" : "Update"}
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Revenue Streams Breakdown */}
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-6 gap-4">
-            <h2 className="text-base font-bold text-base-content">Protocol Monetization Mechanics</h2>
-
+            <div className="flex items-center gap-2">
+              <Landmark className="w-4 h-4 text-accent" />
+              <h2 className="text-base font-bold text-base-content">Revenue Mechanics</h2>
+            </div>
             <div className="overflow-x-auto">
               <table className="table table-sm w-full">
                 <thead>
@@ -208,26 +305,22 @@ export default function AdminDashboard() {
                 <tbody className="divide-y divide-base-300/60 text-xs">
                   <tr>
                     <td className="font-semibold text-base-content py-3">Task Completion Fee</td>
-                    <td className="text-base-content/60 py-3">Deducted when subtask is verified</td>
+                    <td className="text-base-content/60 py-3">Deducted when a subtask's payout releases</td>
                     <td className="py-3 font-mono font-bold text-success">5.0%</td>
                   </tr>
                   <tr>
-                    <td className="font-semibold text-base-content py-3">Staking Slash Penalty</td>
-                    <td className="text-base-content/60 py-3">Seized on worker timeout or forfeit</td>
+                    <td className="font-semibold text-base-content py-3">Bond Slash Penalty</td>
+                    <td className="text-base-content/60 py-3">Seized on failed verification, spam forfeit, or a lost dispute</td>
                     <td className="py-3 font-mono font-bold text-error">100%</td>
-                  </tr>
-                  <tr>
-                    <td className="font-semibold text-base-content py-3">Reputation Minting</td>
-                    <td className="text-base-content/60 py-3">Worker SBT identity verification</td>
-                    <td className="py-3 font-mono text-base-content/40">Coming Soon</td>
                   </tr>
                 </tbody>
               </table>
             </div>
-
             <div className="p-3 bg-base-200/50 rounded-xl border border-base-300/60 text-xs text-base-content/60 flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-warning shrink-0" />
-              <span>Admin contract authority verified on-chain: <code className="font-mono text-base-content">0xf302…b39e6</code></span>
+              <span>
+                Admin authority verified on-chain: <code className="font-mono text-base-content">{account?.slice(0, 8)}…{account?.slice(-6)}</code>
+              </span>
             </div>
           </div>
         </div>
@@ -235,6 +328,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
-
-

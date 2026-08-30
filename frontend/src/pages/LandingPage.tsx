@@ -207,7 +207,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-base sm:text-lg md:text-xl text-base-content/60 max-w-2xl mx-auto font-normal leading-relaxed">
-            Parallax turns ambitious project prompts into discrete, verifiable microtasks. Gemini AI evaluates submissions automatically while smart contracts handle instant escrow releases.
+            Parallax turns ambitious project prompts into discrete, verifiable microtasks. Gemini AI evaluates submissions automatically, and smart contracts hold escrow through a dispute-protected payout window.
           </p>
 
           {/* Hero CTAs */}
@@ -360,8 +360,8 @@ export default function LandingPage() {
             <div className="text-xs text-base-content/50 font-medium mt-1">Automated Quality Scoring</div>
           </div>
           <div>
-            <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">Instant</div>
-            <div className="text-xs text-base-content/50 font-medium mt-1">Smart Contract Escrow</div>
+            <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">48h</div>
+            <div className="text-xs text-base-content/50 font-medium mt-1">Dispute-Protected Escrow</div>
           </div>
         </div>
       </section>
@@ -395,9 +395,9 @@ export default function LandingPage() {
               <div className="w-10 h-10 rounded-xl bg-base-300/80 border border-base-300 flex items-center justify-center font-mono font-bold text-sm text-secondary">
                 02
               </div>
-              <h3 className="text-base font-bold text-base-content">Stake & Deliver</h3>
+              <h3 className="text-base font-bold text-base-content">Bond & Deliver</h3>
               <p className="text-xs text-base-content/60 leading-relaxed">
-                Qualified workers stake MON collateral to claim subtasks. They submit finished deliverables pinned to IPFS, ensuring complete tamper-proof transparency.
+                Workers post a MON bond to claim subtasks, deterring spam. They submit finished deliverables pinned to IPFS, ensuring complete tamper-proof transparency.
               </p>
             </div>
           </div>
@@ -409,7 +409,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-base font-bold text-base-content">Verify & Settle</h3>
               <p className="text-xs text-base-content/60 leading-relaxed">
-                The AI Orchestrator grades work against master specs. Passed submissions trigger instant smart contract payouts; invalid work results in slashed stakes.
+                The AI Orchestrator grades work against master specs. Passed submissions open a 48-hour creator dispute window before payout; invalid work slashes the worker's bond.
               </p>
             </div>
           </div>
@@ -445,7 +445,7 @@ export default function LandingPage() {
                 </tr>
                 <tr>
                   <td className="font-bold text-base-content py-4">Payout Settlement Speed</td>
-                  <td className="py-4 font-mono font-bold text-success">Instant on verification</td>
+                  <td className="py-4 font-mono font-bold text-success">48h dispute window on verification</td>
                   <td className="py-4 text-base-content/50">14-day mandatory hold</td>
                 </tr>
                 <tr>
@@ -455,7 +455,7 @@ export default function LandingPage() {
                 </tr>
                 <tr>
                   <td className="font-bold text-base-content py-4">Dispute & QA Mechanism</td>
-                  <td className="py-4 font-mono font-bold text-success">Deterministic AI scoring + Stake Slashing</td>
+                  <td className="py-4 font-mono font-bold text-success">AI scoring + creator dispute window + bond slashing</td>
                   <td className="py-4 text-base-content/50">Subjective customer support tickets</td>
                 </tr>
                 <tr>
@@ -514,9 +514,9 @@ export default function LandingPage() {
           <div className="card bg-base-200/40 border border-base-300/60 shadow-xs">
             <div className="card-body p-5 gap-3">
               <Coins className="w-5 h-5 text-success" />
-              <h3 className="text-sm font-bold text-base-content">Instant Settlement</h3>
+              <h3 className="text-sm font-bold text-base-content">Fast, Disputable Settlement</h3>
               <p className="text-xs text-base-content/60 leading-relaxed">
-                Immediate on-chain releases ensure freelancers are paid directly upon approval with no 14-day delays.
+                Freelancers are paid on-chain 48 hours after AI approval — no 14-day hold, and creators keep a real window to contest bad work.
               </p>
             </div>
           </div>
@@ -526,7 +526,7 @@ export default function LandingPage() {
               <Users className="w-5 h-5 text-info" />
               <h3 className="text-sm font-bold text-base-content">On-Chain Reputation</h3>
               <p className="text-xs text-base-content/60 leading-relaxed">
-                Immutable reputation scores allow clients to restrict critical jobs to top-tier proven workers.
+                Immutable success/failure history builds a public track record clients can review before trusting a worker with high-value work.
               </p>
             </div>
           </div>

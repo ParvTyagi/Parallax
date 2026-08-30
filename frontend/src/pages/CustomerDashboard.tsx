@@ -20,11 +20,14 @@ import {
 } from "lucide-react";
 
 const BADGE_MAP: Record<string, { label: string; cls: string }> = {
-  OPEN:      { label: "OPEN", cls: "badge-info" },
-  CLAIMED:   { label: "CLAIMED", cls: "badge-warning" },
-  SUBMITTED: { label: "SUBMITTED", cls: "badge-secondary" },
-  VERIFIED:  { label: "VERIFIED", cls: "badge-success" },
-  FAILED:    { label: "FAILED", cls: "badge-error" },
+  OPEN:            { label: "OPEN", cls: "badge-info" },
+  CLAIMED:         { label: "CLAIMED", cls: "badge-warning" },
+  SUBMITTED:       { label: "SUBMITTED", cls: "badge-secondary" },
+  PENDING_RELEASE: { label: "DISPUTE WINDOW", cls: "badge-warning" },
+  IN_DISPUTE:      { label: "IN DISPUTE", cls: "badge-error" },
+  VERIFIED:        { label: "VERIFIED", cls: "badge-success" },
+  FAILED:          { label: "FAILED", cls: "badge-error" },
+  REJECTED:        { label: "REJECTED", cls: "badge-error" },
 };
 
 const PROMPT_TEMPLATES = [
@@ -49,7 +52,6 @@ const CustomerDashboard = () => {
   const { account, taskManager, connectWallet } = useWeb3();
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState("");
-  const [minReputation, setMinReputation] = useState("0");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [errorText, setErrorText] = useState("");
@@ -164,7 +166,6 @@ const CustomerDashboard = () => {
         setStatusText("");
         setDescription("");
         setBudget("");
-        setMinReputation("0");
         setFile(null);
         setIsPrivate(false);
         if (account) fetchCustomerTasks(account);
@@ -365,52 +366,30 @@ const CustomerDashboard = () => {
                   />
                 </div>
 
-                {/* Budget & Min Reputation */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-base-content uppercase tracking-wider">
-                      Budget (MON) *
-                    </label>
-                    <div className="join w-full">
-                      <span className="join-item btn btn-sm bg-base-200 border-base-300 font-mono font-bold text-xs">
-                        MON
-                      </span>
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        placeholder="0.00"
-                        className="input input-sm input-bordered join-item w-full font-mono text-sm"
-                        value={budget}
-                        onChange={(e) => setBudget(e.target.value)}
-                        disabled={isProcessing}
-                      />
-                    </div>
-                    <p className="text-[11px] text-base-content/40">
-                      Escrowed on Monad & split across generated subtasks.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-base-content uppercase tracking-wider">
-                      Min Worker Reputation
-                    </label>
+                {/* Budget */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-base-content uppercase tracking-wider">
+                    Budget (MON) *
+                  </label>
+                  <div className="join w-full max-w-xs">
+                    <span className="join-item btn btn-sm bg-base-200 border-base-300 font-mono font-bold text-xs">
+                      MON
+                    </span>
                     <input
                       type="number"
-                      min="0"
-                      max="100"
-                      placeholder="0"
-                      className="input input-sm input-bordered w-full font-mono text-sm"
-                      value={minReputation}
-                      onChange={(e) => setMinReputation(e.target.value)}
+                      min="0.01"
+                      step="0.01"
+                      placeholder="0.00"
+                      className="input input-sm input-bordered join-item w-full font-mono text-sm"
+                      value={budget}
+                      onChange={(e) => setBudget(e.target.value)}
                       disabled={isProcessing}
                     />
-                    <p className="text-[11px] text-base-content/40">
-                      {Number(minReputation) === 0
-                        ? "0 = Open to all network workers"
-                        : `Requires ≥ ${minReputation} reputation score`}
-                    </p>
                   </div>
+                  <p className="text-[11px] text-base-content/40">
+                    Escrowed on Monad & split across generated subtasks. Sybil resistance comes from the
+                    MON bond every worker posts to claim a subtask, not from a reputation gate.
+                  </p>
                 </div>
 
                 {/* Dataset Attachment (optional) */}

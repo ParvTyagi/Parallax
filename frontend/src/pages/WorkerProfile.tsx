@@ -11,11 +11,14 @@ import {
 } from "lucide-react";
 
 const STATE_BADGE: Record<string, { label: string; cls: string }> = {
-  OPEN:      { label: "OPEN", cls: "badge-info" },
-  CLAIMED:   { label: "CLAIMED", cls: "badge-warning" },
-  SUBMITTED: { label: "SUBMITTED", cls: "badge-secondary" },
-  VERIFIED:  { label: "VERIFIED", cls: "badge-success" },
-  FAILED:    { label: "FAILED", cls: "badge-error" },
+  OPEN:            { label: "OPEN", cls: "badge-info" },
+  CLAIMED:         { label: "CLAIMED", cls: "badge-warning" },
+  SUBMITTED:       { label: "SUBMITTED", cls: "badge-secondary" },
+  PENDING_RELEASE: { label: "DISPUTE WINDOW", cls: "badge-warning" },
+  IN_DISPUTE:      { label: "IN DISPUTE", cls: "badge-error" },
+  VERIFIED:        { label: "VERIFIED", cls: "badge-success" },
+  FAILED:          { label: "FAILED", cls: "badge-error" },
+  REJECTED:        { label: "REJECTED", cls: "badge-error" },
 };
 
 const WorkerProfile = () => {
@@ -204,12 +207,12 @@ const WorkerProfile = () => {
         <div className="card bg-base-100 border border-base-300/80 shadow-xs col-span-2 lg:col-span-1">
           <div className="card-body p-4 md:p-5">
             <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
-              Staked (MON)
+              Bonded (MON)
             </span>
             <div className="text-2xl font-bold font-mono text-base-content">
-              {Number(profile.stakedAmount || 0).toFixed(2)}
+              {Number(profile.activeBondTotal || 0).toFixed(2)}
             </div>
-            <span className="text-[11px] text-base-content/40">Active collateral</span>
+            <span className="text-[11px] text-base-content/40">Locked against open claims</span>
           </div>
         </div>
       </div>
@@ -227,7 +230,7 @@ const WorkerProfile = () => {
 
             {/* Filter Pills */}
             <div className="flex items-center gap-1">
-              {["ALL", "VERIFIED", "SUBMITTED", "CLAIMED"].map((state) => (
+              {["ALL", "VERIFIED", "PENDING_RELEASE", "IN_DISPUTE", "SUBMITTED", "CLAIMED"].map((state) => (
                 <button
                   key={state}
                   type="button"
