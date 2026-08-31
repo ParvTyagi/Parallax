@@ -3,6 +3,7 @@ import { useWeb3 } from "../contexts/Web3Context";
 import { ethers } from "ethers";
 import { API_URL } from "../lib/constants";
 import { Link } from "react-router-dom";
+import { ReviewSubtasksModal, type DraftSubtask } from "../components/task/ReviewSubtasksModal";
 import {
   Layers,
   CheckCircle2,
@@ -62,6 +63,13 @@ const CustomerDashboard = () => {
   const [searchFilter, setSearchFilter] = useState("");
 
   const [myTasks, setMyTasks] = useState<any[]>([]);
+
+  const [draftDecomposition, setDraftDecomposition] = useState<{
+    masterTask: string;
+    masterTaskCID: string;
+    subtasks: Array<{ rangeLabel: string; description: string; descriptionCID: string; reward: number; leaseDuration: number }>;
+  } | null>(null);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
 
   useEffect(() => {
     if (account) fetchCustomerTasks(account);
@@ -133,15 +141,61 @@ const CustomerDashboard = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "AI Decomposition failed");
 
+      setDraftDecomposition({
+        masterTask: data.masterTask,
+        masterTaskCID: data.masterTaskCID,
+        subtasks: data.subtasks,
+      });
+      setIsReviewOpen(true);
+      setIsProcessing(false);
+      setStatusText("");
+    } catch (error: any) {
+      console.error("Task creation error:", error);
+      const friendlyError =
+        error?.reason ||
+        error?.info?.error?.message ||
+        error?.data?.message ||
+        error?.message ||
+        "Transaction failed. Check your wallet balance and network.";
+      setErrorText(friendlyError);
+      setIsProcessing(false);
+      setStatusText("");
+    }
+  };
+
+  const handleConfirmCreateTask = async (result: { masterTaskCID: string; finalSubtasks: DraftSubtask[] }) => {
+    setIsReviewOpen(false);
+    setIsProcessing(true);
+    setErrorText("");
+    try {
+      setStatusText("Pinning edited subtask descriptions to IPFS…");
+      const resolvedSubtasks = await Promise.all(
+        result.finalSubtasks.map(async (st) => {
+          // On-chain `description` is always resolved as an IPFS CID (see backend/src/lib/chain.ts),
+          // so any edited or manually-added row needs a fresh pin before it can go on-chain.
+          if (!st.isEdited && st.descriptionCID) {
+            return { ...st, descriptionCID: st.descriptionCID };
+          }
+          const pinRes = await fetch(`${API_URL}/api/ipfs/upload`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: st.description }),
+          });
+          const pinData = await pinRes.json();
+          if (!pinRes.ok) throw new Error(pinData.error || "IPFS upload failed for an edited subtask");
+          return { ...st, descriptionCID: pinData.cid };
+        })
+      );
+
       setStatusText("Confirming Monad escrow funding in MetaMask…");
       let totalValue = 0n;
-      const subtasksFormatted = data.subtasks.map((st: any) => {
-        const rewardStr = typeof st.reward === "number" ? st.reward.toFixed(4) : parseFloat(st.reward || "0").toFixed(4);
+      const subtasksFormatted = resolvedSubtasks.map((st) => {
+        const rewardStr = parseFloat(st.reward || "0").toFixed(4);
         const r = ethers.parseEther(rewardStr);
         totalValue += r;
         return {
           rangeLabel: String(st.rangeLabel || "Subtask"),
-          description: String(st.descriptionCID || st.description || ""),
+          description: String(st.descriptionCID || ""),
           reward: r,
           leaseDuration: BigInt(st.leaseDuration || 1800),
         };
@@ -152,7 +206,7 @@ const CustomerDashboard = () => {
       }
 
       const tx = await taskManager.createTask(
-        data.masterTaskCID,
+        result.masterTaskCID,
         subtasksFormatted,
         { value: totalValue }
       );
@@ -168,6 +222,7 @@ const CustomerDashboard = () => {
         setBudget("");
         setFile(null);
         setIsPrivate(false);
+        setDraftDecomposition(null);
         if (account) fetchCustomerTasks(account);
         setActiveTab("tasks");
       }, 2000);
@@ -183,6 +238,13 @@ const CustomerDashboard = () => {
       setIsProcessing(false);
       setStatusText("");
     }
+  };
+
+  const handleCancelReview = () => {
+    setIsReviewOpen(false);
+    setDraftDecomposition(null);
+    setIsProcessing(false);
+    setStatusText("");
   };
 
   const activeCount = myTasks.filter((t) =>
@@ -483,6 +545,18 @@ const CustomerDashboard = () => {
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span>{errorText}</span>
                   </div>
+                )}
+
+                {draftDecomposition && (
+                  <ReviewSubtasksModal
+                    open={isReviewOpen}
+                    masterTask={draftDecomposition.masterTask}
+                    masterTaskCID={draftDecomposition.masterTaskCID}
+                    budget={budget}
+                    subtasks={draftDecomposition.subtasks}
+                    onConfirm={handleConfirmCreateTask}
+                    onCancel={handleCancelReview}
+                  />
                 )}
 
                 {/* Submit Action */}
