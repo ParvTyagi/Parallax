@@ -22,12 +22,9 @@ interface Attachment {
   ephemeral?: boolean;
 }
 
-/// Pulls dataset CIDs out of a task description.
-///
-/// The attachment reference is written into the pinned master brief as an
-/// `ipfs://<cid>` URI, because the contract has no field for it — the on-chain
-/// description is a single CID and adding an attachments array would mean a
-/// contract migration.
+/// Pulls dataset CIDs out of a task description. The reference lives in the
+/// pinned brief as an `ipfs://<cid>` URI because the contract has no field for
+/// it — the on-chain description is a single CID.
 export function extractAttachmentCids(description?: string | null): string[] {
   if (!description) return [];
   const matches = description.matchAll(/ipfs:\/\/([A-Za-z0-9]{20,})/g);

@@ -33,18 +33,15 @@ async function resolveTaskText(task: any) {
   };
 }
 
-/// Wallets, RPC event decoding, and hand-typed URLs disagree on address casing.
-/// Matching exactly made a creator's own tasks invisible to them, so every
-/// address filter is case-insensitive.
+/// Wallets, decoded events, and hand-typed URLs disagree on address casing, so
+/// every address filter is case-insensitive.
 const addressFilter = (address: string) => ({
   equals: address,
   mode: "insensitive" as const
 });
 
-/// Indexes a just-confirmed transaction immediately instead of waiting for the
-/// block poller. The frontend calls this right after `tx.wait()` so a newly
-/// created task shows up at once. The receipt is re-read from the chain
-/// server-side, so this cannot be used to fabricate a task.
+/// Indexes a just-confirmed transaction instead of waiting for the block poller.
+/// The receipt is re-read server-side, so this cannot fabricate a task.
 const SyncSchema = z.object({ txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/) });
 
 router.post("/sync", async (req, res) => {
@@ -162,8 +159,7 @@ router.get("/:taskId", async (req, res) => {
   }
 });
 
-// Backwards-compatible alias for older clients. Two path segments, so it does not
-// collide with GET /:taskId below it.
+// Backwards-compatible alias; two segments, so no collision with GET /:taskId.
 router.get("/worker-profile/:address", (req, res, next) => {
   req.url = `/${req.params.address}`;
   workersRouter(req, res, next);
@@ -171,11 +167,8 @@ router.get("/worker-profile/:address", (req, res, next) => {
 
 export default router;
 
-/// Mounted separately at /api/workers.
-///
-/// Previously the tasks router was double-mounted there, so `GET /api/workers/0x…`
-/// fell through to `GET /:taskId` and 404'd — which is why worker profiles and the
-/// marketplace's "my claimed tasks" panel came back empty.
+/// Mounted at /api/workers. Kept separate from the tasks router, whose
+/// `GET /:taskId` would otherwise swallow `GET /api/workers/0x…`.
 export const workersRouter = Router();
 
 workersRouter.get("/:address", async (req, res) => {

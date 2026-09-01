@@ -17,12 +17,8 @@ import ipfsRouter from "./routes/ipfs";
 import { startJobWorker } from "./lib/worker";
 import rateLimit from "express-rate-limit";
 
-// Rate limiting.
-//
-// A single 100-req/15min bucket across all of /api was unusable: the creator
-// dashboard polls every 5s (180 requests per window on its own), so a tab left
-// open started 429ing after about eight minutes. Reads are cheap and get a
-// generous budget; the expensive paths are limited separately and much harder.
+// Limits are split by cost. A single bucket across all of /api cannot work:
+// the dashboard alone polls every 5s, which is 180 requests per window.
 const readLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1500,
@@ -39,7 +35,7 @@ const writeLimiter = rateLimit({
   message: { error: "Too many requests, please try again later." }
 });
 
-// Every call here costs Gemini tokens, so it gets the tightest budget.
+// Every call here costs Gemini tokens.
 const aiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 40,
@@ -61,12 +57,10 @@ app.use("/api/", (req, res, next) =>
   req.method === "GET" ? readLimiter(req, res, next) : writeLimiter(req, res, next)
 );
 
-// Basic health endpoint
 app.get("/health", (req, res) => {
   res.json({ status: "ok", message: "Parallax Backend is running securely" });
 });
 
-// API Routes
 app.use("/api/decompose", aiLimiter, decomposeRouter);
 app.use("/api/verify", aiLimiter, verifyRouter);
 app.use("/api/submissions", submissionsRouter);
@@ -79,7 +73,6 @@ app.use("/api/ipfs", (req, res, next) =>
 );
 app.use("/api/ipfs", ipfsRouter);
 
-// Setup background services
 setupChainListeners().catch(console.error);
 startJobWorker().catch(console.error);
 

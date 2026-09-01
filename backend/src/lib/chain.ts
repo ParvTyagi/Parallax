@@ -19,9 +19,8 @@ const TASK_MANAGER_ABI = [
   "event ReputationUpdated(address indexed worker, int256 newScore, uint256 successfulTasks, uint256 failedTasks)"
 ];
 
-/// The Monad testnet public RPC rejects `eth_getLogs` ranges wider than 100 blocks
-/// (see scripts/backfill.js, which chunks at 99 for the same reason). Backfilling
-/// after downtime can span thousands of blocks, so every scan is chunked.
+/// The Monad public RPC rejects `eth_getLogs` ranges wider than 100 blocks, and
+/// backfilling after downtime can span thousands, so every scan is chunked.
 const MAX_BLOCK_SPAN = Number(process.env.CHAIN_MAX_BLOCK_SPAN || 99);
 const POLL_INTERVAL_MS = Number(process.env.CHAIN_POLL_INTERVAL_MS || 5000);
 
@@ -56,12 +55,8 @@ async function maybeQueueAggregate(taskId: string) {
   }
 }
 
-/// Applies one decoded contract event to the database.
-///
-/// Shared by the block poller and by the receipt-based sync endpoint, so a task
-/// created in the browser can be indexed the instant its transaction confirms
-/// instead of waiting a full poll cycle. Every write is an upsert/updateMany, so
-/// replaying the same event is harmless.
+/// Applies one decoded contract event to the database. Shared by the block
+/// poller and the receipt sync endpoint, so every write is idempotent.
 export async function applyEvent(
   eventName: string,
   args: readonly any[],
@@ -110,9 +105,8 @@ export async function applyEvent(
       const [taskId, subtaskId, rangeLabel, description, reward, leaseDuration] = args;
       console.log(`Event SubtaskCreated: ${subtaskId}`);
 
-      // The contract only carries the IPFS CID. The structured spec (objective,
-      // acceptance criteria, deliverable format) was stashed against that CID at
-      // decompose time — pull it back so workers and the verifier can use it.
+      // The contract only carries the CID; the structured spec was stored
+      // against it at decompose time.
       const spec = await getSpecDraft(description);
       const specFields = spec
         ? {
@@ -170,8 +164,7 @@ export async function applyEvent(
         data: { state: "SUBMITTED", submissionHash: submissionCID }
       });
 
-      // Only queue one VERIFY job per submission proof — a replayed event
-      // (poller + receipt sync seeing the same log) must not double-verify.
+      // One VERIFY job per proof: poller and receipt sync may see the same log.
       const existingJob = await prisma.job.findFirst({
         where: {
           type: "VERIFY",
@@ -281,13 +274,9 @@ export async function applyEvent(
   }
 }
 
-/// Indexes a single transaction directly from its receipt.
-///
-/// The block poller can lag by a poll interval or more, which made freshly
-/// created tasks invisible in the dashboard. The frontend calls this with the
-/// createTask transaction hash the moment it confirms. It is trustless: the
-/// receipt is re-fetched from the RPC and the logs re-decoded server-side, so a
-/// caller cannot inject a task that was never mined.
+/// Indexes a single transaction from its receipt, so a newly created task is
+/// visible without waiting for the poller. The receipt is re-fetched and decoded
+/// server-side, so a caller cannot inject a task that was never mined.
 export async function syncTransaction(txHash: string): Promise<{ indexed: number; taskIds: string[] }> {
   const provider = getProvider();
   const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
@@ -358,8 +347,8 @@ export async function setupChainListeners() {
   const contract = new ethers.Contract(taskManagerAddress, TASK_MANAGER_ABI, provider);
   console.log("Starting chain polling with a durable block cursor...");
 
-  // setInterval would stack overlapping scans while a slow backfill runs, so the
-  // loop reschedules itself only after each pass completes.
+  // Reschedules after each pass; setInterval would stack overlapping scans
+  // while a slow backfill runs.
   let running = false;
 
   const tick = async () => {
@@ -383,8 +372,7 @@ export async function setupChainListeners() {
           }
         }
 
-        // Persisted per chunk: a crash mid-backfill resumes here rather than
-        // rescanning, and never silently skips the range it already consumed.
+        // Persisted per chunk so a crash mid-backfill resumes here.
         cursor = to;
         await saveCursor(taskManagerAddress, cursor);
       }

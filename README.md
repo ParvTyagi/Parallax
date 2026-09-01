@@ -18,11 +18,12 @@ Currently, decentralized compute networks treat processing as a single, monolith
 ## 💡 What our project is doing
 Parallax solves this by leveraging **Monad's parallel execution capabilities** alongside AI intelligence. 
 
-1. **AI Decomposition:** Customers input a large task; the AI Orchestrator intelligently slices it into independent subtasks.
+1. **AI Decomposition:** Customers input a large task; the AI Orchestrator slices it into independent subtasks, each with an explicit objective, deliverable format, and a set of objectively checkable acceptance criteria. The customer reviews and edits that breakdown before anything reaches the chain.
 2. **Parallel Execution:** Global workers claim individual chunks simultaneously, dramatically speeding up completion time.
 3. **Dynamic Leases:** The AI analyzes task complexity and assigns dynamic lease durations. If a worker doesn't submit in time, the claim is dropped and returned to the pool.
-4. **Trustless AI Verification:** Worker submissions are hashed on-chain. Our AI Orchestrator acts as a decentralized QA node, evaluating the off-chain data against the task requirements. If approved, funds are released trustlessly.
-5. **Automated Master Aggregation:** When all subtasks reach `VERIFIED` status, the AI seamlessly merges the disjointed worker outputs into one cohesive final solution for the customer.
+4. **Criterion-Level AI Verification:** Worker submissions are hashed on-chain. The AI Orchestrator grades the off-chain deliverable against each acceptance criterion independently and records the per-criterion verdict, so an approval or rejection is auditable rather than a bare score. Approved work enters a 48-hour dispute window before payout.
+5. **Dataset Attachments:** Customers can attach whole folders or multi-file datasets. They are zipped in the browser, pinned to IPFS, and workers can browse the archive's contents or pull a single file without downloading the whole bundle.
+6. **Automated Master Aggregation:** When all subtasks reach `VERIFIED` status, the AI seamlessly merges the disjointed worker outputs into one cohesive final solution for the customer.
 
 ## 🌐 Live Links
 
@@ -30,13 +31,13 @@ Parallax solves this by leveraging **Monad's parallel execution capabilities** a
 - **Backend API (Render):** [https://parallax-8yob.onrender.com](https://parallax-8yob.onrender.com)
 
 ### Smart Contracts (Monad Testnet)
-- `ParallaxEscrow`: [0x04AF0d04E5D4895Aca4763185b95BaCf54c26069](https://testnet.monadexplorer.com/address/0x04AF0d04E5D4895Aca4763185b95BaCf54c26069)
-- `ParallaxTaskManager`: [0x8a50d0208c719cBB92094f3A18A072Ce37cad974](https://testnet.monadexplorer.com/address/0x8a50d0208c719cBB92094f3A18A072Ce37cad974)
+- `ParallaxEscrow`: [0x5e70Ae4fdB3301693606e9D1ef1a92721896EED9](https://testnet.monadexplorer.com/address/0x5e70Ae4fdB3301693606e9D1ef1a92721896EED9)
+- `ParallaxTaskManager`: [0x7371e2777cD7Cbf9d3bE33F780122C1C9C9A4F20](https://testnet.monadexplorer.com/address/0x7371e2777cD7Cbf9d3bE33F780122C1C9C9A4F20)
 
 ## 🛠 Tech Stack
 - **Smart Contracts:** Solidity, Hardhat, Ethers.js
 - **Blockchain:** Monad Testnet
-- **Backend:** Node.js, Express, Prisma (PostgreSQL), Gemini-3.5-flash-lite SDK
+- **Backend:** Node.js, Express, Prisma (PostgreSQL), Gemini API
 - **Frontend:** React, Vite, Tailwind CSS, DaisyUI
 
 ## 🚀 How to Setup (Local Development)
@@ -68,7 +69,8 @@ npm run dev
 ```
 
 ## 🔮 What's Next?
-- **IPFS Codebase Processing:** Allowing customers to upload `.zip` codebases to IPFS so the network can perform decentralized code reviews and large-scale refactoring.
+- **Decentralized Deliverable Storage:** Worker submissions are currently persisted server-side; pinning them to IPFS alongside task specs and datasets.
+- **Policy Layer Before Payout:** Bounding what the Orchestrator key can auto-approve, and escalating high-value releases to the customer.
 - **ZK Proof Verification:** Transitioning from an AI Orchestrator wallet to Zero-Knowledge coprocessors for mathematically provable off-chain compute verification.
 
 ---

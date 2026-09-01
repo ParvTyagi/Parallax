@@ -20,11 +20,8 @@ export interface SubtaskLike {
   aiRationale?: string | null;
 }
 
-/// One-line summary for cards and lists.
-///
-/// `description` is now a full markdown brief, so rendering it directly puts
-/// "# Phase 1" and heading noise into card titles. Prefer the structured
-/// objective and fall back to stripping markdown out of the brief.
+/// One-line summary for cards and lists. `description` is a full markdown
+/// brief, so prefer the structured objective and strip markdown as a fallback.
 export function subtaskHeadline(st: SubtaskLike): string {
   if (st.objective?.trim()) return st.objective.trim();
   const raw = st.description || "";
@@ -36,9 +33,8 @@ export function subtaskHeadline(st: SubtaskLike): string {
   return body.split("\n").filter(Boolean)[0] || st.rangeLabel || "Subtask";
 }
 
-/// Acceptance criteria checklist. Before verification it's a plain list of the
-/// bar the worker has to clear; afterwards each row shows the verifier's verdict
-/// and reasoning, so a rejection is explainable rather than a bare score.
+/// Acceptance criteria checklist: the bar to clear before verification, and the
+/// verifier's per-criterion verdict afterwards.
 export function AcceptanceCriteria({ subtask }: { subtask: SubtaskLike }) {
   const criteria = subtask.acceptanceCriteria || [];
   const results = subtask.criteriaResults || [];

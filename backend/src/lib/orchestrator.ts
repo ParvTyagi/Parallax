@@ -34,13 +34,10 @@ export function getOrchestratorContract(): ethers.Contract {
   return contract;
 }
 
-/// Serialises every transaction sent from the orchestrator key.
-///
-/// The verify job worker and the payout sweeper run on independent timers and
-/// both sign with the same key. Previously each built its own transaction and
-/// let ethers pick the nonce, so two overlapping sends would fetch the same
-/// pending nonce — one replaces the other, and a payout silently never happens.
-/// One key means one in-flight transaction at a time.
+/// Serialises every transaction sent from the orchestrator key. The verify
+/// worker and the payout sweeper run on independent timers and share that key;
+/// letting each pick its own nonce means overlapping sends collide and one
+/// silently replaces the other. One key, one in-flight transaction.
 let queue: Promise<unknown> = Promise.resolve();
 
 /// Locally tracked next nonce. Reset to null after any failure so the next send
@@ -89,8 +86,7 @@ async function sendNow(
     const nonce = nextNonce;
     const tx = await build(c, { nonce });
 
-    // Only advance once the node has accepted the transaction — if `build`
-    // throws, this nonce was never consumed.
+    // Advance only once accepted: if `build` throws, the nonce was not used.
     nextNonce = nonce + 1;
     console.log(`[Orchestrator] Sent ${label} (nonce ${nonce}): ${tx.hash}`);
 
@@ -100,8 +96,7 @@ async function sendNow(
     }
     return receipt;
   } catch (err) {
-    // Covers reverts, timeouts, and RPC errors alike: the local nonce can no
-    // longer be trusted, so force a resync before the next send.
+    // Reverts, timeouts and RPC errors alike invalidate the local nonce.
     nextNonce = null;
     throw err;
   }

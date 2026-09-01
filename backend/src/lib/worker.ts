@@ -1,6 +1,4 @@
 import { fetchFromIPFS } from "./ipfs";
-
-// ... [existing imports]
 import { prisma } from "../db/client";
 import { generateWithGemini } from "./gemini";
 import { sendOrchestratorTx } from "./orchestrator";
@@ -14,15 +12,10 @@ export async function startJobWorker() {
 
   setInterval(async () => {
     try {
-      // Claim exactly one job atomically.
-      //
-      // This used to be `findFirst` then `update`, which is a race: two backend
-      // instances (or two overlapping ticks) could both read the same PENDING
-      // job and both process it — double-verifying a subtask and sending two
-      // on-chain transactions for it. `FOR UPDATE SKIP LOCKED` hands each caller
-      // a different row inside one statement, which is the standard Postgres
-      // work-queue claim. `updatedAt` is set explicitly because @updatedAt is
-      // applied by Prisma Client, not by the database.
+      // Claims one job atomically. SKIP LOCKED guarantees two workers never
+      // take the same row, which would double-send its on-chain transaction.
+      // `updatedAt` is set here because @updatedAt is applied by Prisma Client,
+      // not the database, and this bypasses it.
       const claimed = await prisma.$queryRaw<
         Array<{ id: string; type: string; payload: any; attempts: number }>
       >`
@@ -50,7 +43,6 @@ export async function startJobWorker() {
           await handleAggregate(job.payload as any);
         }
 
-        // Mark completed
         await prisma.job.update({
           where: { id: job.id },
           data: { status: "COMPLETED" }
@@ -61,8 +53,8 @@ export async function startJobWorker() {
         await prisma.job.update({
           where: { id: job.id },
           data: {
-            // `attempts` comes back already incremented by the claim statement,
-            // so this retires a job after 3 total attempts.
+            // `attempts` is already incremented by the claim, so this retires a
+            // job after 3 total attempts.
             status: job.attempts >= 3 ? "FAILED" : "PENDING",
             error: err.message || "Unknown error"
           }
@@ -86,15 +78,13 @@ async function handleVerify(payload: { subtaskId: string }) {
     throw new Error("Subtask or submission not found");
   }
 
-  // IPFS Fetching!
   const workerSubmissionCID = subtask.submissions[0].storagePath;
   const workerSubmissionText = await fetchFromIPFS(workerSubmissionCID);
 
   const subtaskRequirementText = await fetchFromIPFS(subtask.description);
 
-  // Grade against the explicit acceptance criteria written at decompose time.
-  // Without them the verdict is a vibe check; with them it is auditable, and the
-  // worker can see exactly which bar they missed.
+  // Grading against the stored criteria keeps the verdict auditable and lets a
+  // worker see exactly which bar they missed.
   const criteria = subtask.acceptanceCriteria || [];
   const { passed, score, reasons, criteriaResults } = await runVerification({
     label: subtask.rangeLabel,
@@ -184,10 +174,8 @@ Return ONLY valid JSON, no markdown fences:
 `;
 
   try {
-    // Route through generateWithGemini, which retries across models. The
-    // verifier decides payouts and was the only AI call pinned to a single
-    // model with no fallback, so one transient 503 dropped it straight to the
-    // degraded path below.
+    // Retries across models: this verdict releases escrowed funds, so a single
+    // overloaded model must not decide it.
     const raw = await generateWithGemini(prompt);
     const text = raw.trim().replace(/```json/gi, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(text);
@@ -211,14 +199,9 @@ Return ONLY valid JSON, no markdown fences:
       criteriaResults
     };
   } catch (err: any) {
-    // Do NOT fall back to a content-length heuristic here.
-    //
-    // This function's verdict is sent on-chain and releases escrowed MON. The
-    // previous fallback passed anything over a few dozen characters, so during
-    // any Gemini outage a junk submission would be paid in full. Throwing
-    // instead leaves the job to retry, and if it keeps failing the subtask
-    // simply stays SUBMITTED with no transaction sent and no money moved --
-    // stuck and visible is strictly better than wrongly paid.
+    // Never approve work the AI could not actually grade: this verdict releases
+    // escrowed MON. Throwing leaves the job to retry and the subtask SUBMITTED
+    // with no transaction sent — stuck and visible beats wrongly paid.
     console.error("[Verify] Verification could not be completed:", err?.message || err);
     throw new Error(`AI verification unavailable: ${err?.message || err}`);
   }
@@ -236,8 +219,6 @@ function startPayoutSweeper() {
 
       if (releasable.length === 0) return;
 
-      // Each send is queued behind the others on the shared orchestrator key,
-      // so these no longer race the verify worker for a nonce.
       for (const subtask of releasable) {
         try {
           await sendOrchestratorTx(

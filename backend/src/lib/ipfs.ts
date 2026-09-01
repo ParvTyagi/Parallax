@@ -3,11 +3,8 @@ import crypto from "crypto";
 // Persistent in-memory cache for IPFS hashes (text content only).
 export const mockIpfsStore = new Map<string, string>();
 
-/// Binary fallback store, kept separate from the text cache.
-///
-/// `pinFileBufferToIPFS` used to stuff `buffer.toString("utf-8")` into the text
-/// map, which silently corrupts every non-text upload — a zip round-tripped
-/// through it comes back unopenable. Binary bytes now stay bytes.
+/// Binary fallback store. Kept separate from the text cache because coercing
+/// bytes through a string corrupts any archive round-tripped through it.
 export interface StoredBinary {
   buffer: Buffer;
   mimetype: string;
@@ -47,7 +44,7 @@ export async function fetchBinaryFromIPFS(cid: string): Promise<StoredBinary | n
   for (const gateway of gateways()) {
     try {
       const cleanGateway = gateway.endsWith("/") ? gateway : `${gateway}/`;
-      // Archives can be large, so allow a much longer window than text fetches.
+      // Archives can be large; allow far longer than a text fetch.
       const response = await fetch(`${cleanGateway}${cid}`, { signal: AbortSignal.timeout(60000) });
       if (response.ok) {
         const buffer = Buffer.from(await response.arrayBuffer());
@@ -170,8 +167,8 @@ export async function pinFileBufferToIPFS(buffer: Buffer, filename: string, mime
         method: "POST",
         headers,
         body: formData as any,
-        // A fixed 10s budget silently failed every large attachment over to the
-        // in-memory fallback. Scale with size, assuming a pessimistic 512 KB/s.
+        // Scaled with size (assumes a pessimistic 512 KB/s); a fixed budget
+        // silently drops large attachments to the in-memory fallback.
         signal: AbortSignal.timeout(Math.min(300000, Math.max(30000, buffer.length / 512)))
       });
 

@@ -13,9 +13,7 @@ export { mockIpfsStore };
 
 const router = Router();
 
-/// Attachments are datasets, not thumbnails — a decomposed research task can ship
-/// a multi-hundred-megabyte corpus. Keep a real ceiling so one upload can't
-/// exhaust the process (uploads are buffered in memory), but make it configurable.
+/// Uploads are buffered in memory, so this ceiling bounds one request's cost.
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB || 100) * 1024 * 1024;
 
 const upload = multer({
@@ -40,10 +38,8 @@ router.post("/upload", async (req, res) => {
   }
 });
 
-/// Uploads one file. When it is a zip — which is how the frontend ships anything
-/// large or multi-file — the manifest is read and persisted so workers can see
-/// what's inside and pull a single entry, instead of the CID being an opaque
-/// blob nobody can open.
+/// Uploads one file. For a zip, the manifest is persisted so workers can see
+/// what is inside and pull a single entry without downloading the archive.
 router.post("/upload-file", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -105,9 +101,7 @@ router.get("/attachment/:cid", async (req, res) => {
   }
 });
 
-/// Streams the attachment bytes back. Without this a pinned dataset was
-/// unreachable — the CID was appended to the task description as text and no
-/// endpoint could serve it.
+/// Streams the attachment bytes back.
 router.get("/file/:cid", async (req, res) => {
   try {
     const { cid } = req.params;
@@ -123,8 +117,7 @@ router.get("/file/:cid", async (req, res) => {
 
     res.setHeader("Content-Type", attachment?.mimetype || stored.mimetype);
     res.setHeader("Content-Length", String(stored.buffer.length));
-    // Quote and strip the filename — a raw name with a quote or newline in it
-    // would let a caller inject extra response header directives.
+    // Stripped: a raw filename could inject extra header directives.
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="${filename.replace(/[^\w.\- ]/g, "_")}"`
@@ -167,8 +160,7 @@ router.get("/archive/:cid/entry", async (req, res) => {
   }
 });
 
-/// Multer rejects an oversized upload with its own error class, which would
-/// otherwise surface to the user as a generic 500 with no size information.
+/// Multer's own error class, which would otherwise surface as a generic 500.
 router.use((err: any, _req: any, res: any, next: any) => {
   if (err?.code === "LIMIT_FILE_SIZE") {
     return res.status(413).json({

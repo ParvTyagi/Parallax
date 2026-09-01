@@ -33,12 +33,8 @@ interface Props {
   disabled?: boolean;
 }
 
-/// Dataset attachment picker.
-///
-/// Accepts many files (or a whole folder) and bundles them into one zip in the
-/// browser before upload. That keeps large corpora to a single request, cuts the
-/// bytes on the wire, and gives the backend one CID with a readable manifest
-/// instead of an opaque blob a worker can't open.
+/// Dataset attachment picker. Bundles many files (or a folder) into one zip in
+/// the browser, so a large corpus is a single request with a readable manifest.
 export function AttachmentUploader({ attachment, onChange, disabled }: Props) {
   const [staged, setStaged] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -80,8 +76,7 @@ export function AttachmentUploader({ attachment, onChange, disabled }: Props) {
         const { default: JSZip } = await import("jszip");
         const zip = new JSZip();
         for (const file of staged) {
-          // webkitRelativePath preserves folder structure when a directory was
-          // picked; it's empty for individually chosen files.
+          // webkitRelativePath preserves folder structure for directory picks.
           const path = (file as any).webkitRelativePath || file.name;
           zip.file(path, file);
         }

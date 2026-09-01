@@ -92,12 +92,9 @@ const CustomerDashboard = () => {
     else setMyTasks([]);
   }, [account]);
 
-  // Poll for as long as a wallet is connected.
-  //
-  // This used to be gated on `myTasks.length > 0`, which deadlocked every
-  // first-time creator: the task list starts empty, so polling never started, so
-  // the task the backend indexed a few seconds later was never picked up and the
-  // dashboard stayed blank until a manual page reload.
+  // Polls for as long as a wallet is connected. Must not be gated on having
+  // tasks already: a first-time creator starts empty, and their first task only
+  // appears once the backend has indexed it.
   useEffect(() => {
     if (!account) return;
     const interval = setInterval(() => fetchCustomerTasks(account), 5000);
@@ -113,9 +110,8 @@ const CustomerDashboard = () => {
     }
   };
 
-  /// Asks the backend to index this transaction straight from its receipt rather
-  /// than waiting for the block poller to reach it. Best-effort: if it fails the
-  /// poller still picks the task up, it just takes a few seconds longer.
+  /// Indexes this transaction from its receipt rather than waiting for the block
+  /// poller. Best-effort - the poller still picks it up if this fails.
   const syncTaskTx = async (txHash: string) => {
     try {
       const res = await fetch(`${API_URL}/api/tasks/sync`, {
@@ -130,8 +126,8 @@ const CustomerDashboard = () => {
     }
   };
 
-  /// Waits until the task actually appears in the indexer before declaring
-  /// success, so the creator is never dropped onto an empty "My Tasks" tab.
+  /// Waits for the task to appear in the indexer, so the creator is never
+  /// dropped onto an empty "My Tasks" tab.
   const waitForIndexedTask = async (walletAddress: string, previousCount: number) => {
     for (let attempt = 0; attempt < 15; attempt++) {
       try {
@@ -169,9 +165,8 @@ const CustomerDashboard = () => {
       }
 
       if (attachment) {
-        // The uploader already pinned this, so only the reference is appended here.
-        // `ipfs://<cid>` is the marker the task page parses back out to render a
-        // browsable, downloadable attachment panel.
+        // Already pinned by the uploader; `ipfs://<cid>` is the marker the task
+        // page parses back out to render the attachment panel.
         const detail = attachment.isArchive && attachment.entryCount
           ? `${attachment.filename} (${attachment.entryCount} files, ${formatBytes(attachment.size)})`
           : `${attachment.filename} (${formatBytes(attachment.size)})`;
@@ -228,11 +223,9 @@ const CustomerDashboard = () => {
       setStatusText("Pinning edited subtask specs to IPFS…");
       const resolvedSubtasks = await Promise.all(
         result.finalSubtasks.map(async (st) => {
-          // On-chain `description` is always an IPFS CID (see backend/src/lib/chain.ts),
-          // so any edited or manually-added row needs a fresh pin before it can go
-          // on-chain. `/respec` re-renders the markdown brief AND re-saves the
-          // structured spec against the new CID, so the acceptance criteria the
-          // verifier later grades against always match what the creator approved.
+          // On-chain `description` is always a CID, so an edited row needs a
+          // fresh pin. `/respec` re-renders the brief and re-saves the spec
+          // against the new CID, keeping criteria and CID in sync.
           if (!st.isEdited && st.descriptionCID) {
             return { ...st, descriptionCID: st.descriptionCID };
           }
