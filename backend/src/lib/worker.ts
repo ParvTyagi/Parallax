@@ -2,7 +2,7 @@ import { fetchFromIPFS } from "./ipfs";
 
 // ... [existing imports]
 import { prisma } from "../db/client";
-import { geminiModel } from "./gemini";
+import { generateWithGemini } from "./gemini";
 import { sendOrchestratorTx } from "./orchestrator";
 import dotenv from "dotenv";
 
@@ -184,8 +184,12 @@ Return ONLY valid JSON, no markdown fences:
 `;
 
   try {
-    const aiResult = await geminiModel.generateContent(prompt);
-    const text = aiResult.response.text().trim().replace(/```json/gi, "").replace(/```/g, "").trim();
+    // Route through generateWithGemini, which retries across models. The
+    // verifier decides payouts and was the only AI call pinned to a single
+    // model with no fallback, so one transient 503 dropped it straight to the
+    // degraded path below.
+    const raw = await generateWithGemini(prompt);
+    const text = raw.trim().replace(/```json/gi, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(text);
 
     const criteriaResults: CriterionResult[] = Array.isArray(parsed.criteriaResults)
@@ -206,25 +210,17 @@ Return ONLY valid JSON, no markdown fences:
       reasons: Array.isArray(parsed.reasons) ? parsed.reasons.map((r: any) => String(r)) : [],
       criteriaResults
     };
-  } catch (err) {
-    console.warn("[Verify] AI verification fallback triggered:", err);
-    // Deterministic fallback: never auto-approve substantive work the AI could not
-    // grade — flag it so a human decides during the dispute window.
-    const hasContent = (input.submission || "").trim().length >= 50;
-    return {
-      passed: hasContent,
-      score: hasContent ? 70 : 20,
-      reasons: [
-        hasContent
-          ? "AI verifier unavailable; passed on a minimum-content check only. Review during the dispute window."
-          : "Submission is empty or too short to evaluate."
-      ],
-      criteriaResults: input.criteria.map((criterion) => ({
-        criterion,
-        met: hasContent,
-        note: "Not individually verified — AI verifier was unavailable."
-      }))
-    };
+  } catch (err: any) {
+    // Do NOT fall back to a content-length heuristic here.
+    //
+    // This function's verdict is sent on-chain and releases escrowed MON. The
+    // previous fallback passed anything over a few dozen characters, so during
+    // any Gemini outage a junk submission would be paid in full. Throwing
+    // instead leaves the job to retry, and if it keeps failing the subtask
+    // simply stays SUBMITTED with no transaction sent and no money moved --
+    // stuck and visible is strictly better than wrongly paid.
+    console.error("[Verify] Verification could not be completed:", err?.message || err);
+    throw new Error(`AI verification unavailable: ${err?.message || err}`);
   }
 }
 
@@ -289,8 +285,7 @@ ${allWork}
 
 Synthesize these submissions into a single cohesive, well-formatted final solution for the master task. Return ONLY the final output markdown text.`;
 
-  const aiResult = await geminiModel.generateContent(prompt);
-  const finalSolution = aiResult.response.text().trim();
+  const finalSolution = (await generateWithGemini(prompt)).trim();
   
   await prisma.task.update({
     where: { taskId },
