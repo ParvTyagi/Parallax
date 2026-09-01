@@ -6,6 +6,14 @@ import { z } from "zod";
 
 const router = Router();
 
+/// `description` on a Task/Subtask row is always an IPFS CID. These helpers swap
+/// it for the text it points at.
+///
+/// When the text cannot be resolved, `description` comes back empty rather than
+/// falling back to the CID — a bare CID rendered as a description is what the
+/// dashboards were showing instead of the brief. `descriptionCID` always carries
+/// the raw pointer, and `descriptionResolved` tells the UI whether to show a
+/// placeholder.
 async function resolveSubtaskText(st: any) {
   if (!st) return st;
   const descText = await fetchFromIPFS(st.description);
@@ -15,8 +23,9 @@ async function resolveSubtaskText(st: any) {
   }
   return {
     ...st,
-    description: descText || st.description,
+    description: descText,
     descriptionCID: st.description,
+    descriptionResolved: Boolean(descText),
     submissionContent
   };
 }
@@ -27,8 +36,9 @@ async function resolveTaskText(task: any) {
   const resolvedSubtasks = await Promise.all((task.subtasks || []).map(resolveSubtaskText));
   return {
     ...task,
-    description: taskDescText || task.description,
+    description: taskDescText,
     descriptionCID: task.description,
+    descriptionResolved: Boolean(taskDescText),
     subtasks: resolvedSubtasks
   };
 }
@@ -73,9 +83,17 @@ router.get(["/open-subtasks", "/subtasks/open"], async (req, res) => {
         const taskDescText = st.task ? await fetchFromIPFS(st.task.description) : "";
         return {
           ...st,
-          description: descText || st.description,
+          description: descText,
           descriptionCID: st.description,
-          task: st.task ? { ...st.task, description: taskDescText || st.task.description } : st.task
+          descriptionResolved: Boolean(descText),
+          task: st.task
+            ? {
+                ...st.task,
+                description: taskDescText,
+                descriptionCID: st.task.description,
+                descriptionResolved: Boolean(taskDescText)
+              }
+            : st.task
         };
       })
     );

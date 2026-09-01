@@ -181,6 +181,13 @@ router.post("/", async (req, res) => {
 
     console.log(`\n[Orchestrator] Decomposing task using model "${aiModel || "default"}"...`);
     const masterTaskText = await fetchFromIPFS(descriptionCID);
+    if (!masterTaskText.trim()) {
+      // Decomposing a CID string instead of the brief produces garbage subtasks,
+      // so fail loudly rather than letting it through.
+      return res.status(422).json({
+        error: `Could not read the task description behind CID ${descriptionCID}. Re-submit the task so it is pinned again.`
+      });
+    }
 
     let parsedJson: any = null;
 

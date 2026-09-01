@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { prisma } from "../db/client";
 
 // Persistent in-memory cache for IPFS hashes (text content only).
 export const mockIpfsStore = new Map<string, string>();
@@ -69,14 +70,45 @@ function generateMockCID(content: string | Buffer): string {
   return "Qm" + hash.slice(0, 44);
 }
 
+/// Persists a pinned blob so it survives a restart and a dead gateway.
+/// Best-effort: losing the durable copy must never fail the pin itself.
+async function cacheTextDurably(cid: string, content: string): Promise<void> {
+  if (!cid || content === undefined || content === null) return;
+  try {
+    await prisma.ipfsText.upsert({
+      where: { cid },
+      update: { content },
+      create: { cid, content }
+    });
+  } catch (e) {
+    console.warn(`[IPFS] Failed to persist durable copy of ${cid}:`, e);
+  }
+}
+
+/// Resolves a CID to its text, in order of increasing cost:
+/// in-process cache -> durable DB copy -> public gateways -> the SpecDraft
+/// markdown stored against the CID at decompose time (recovers tasks pinned
+/// before the durable cache existed).
+///
+/// Returns "" when the content genuinely cannot be resolved. It must never
+/// return the CID itself: callers render this as a description and feed it to
+/// the verifier, and a bare CID there is worse than nothing.
 export async function fetchFromIPFS(cid: string): Promise<string> {
   if (!cid) return "";
-  
-  if (mockIpfsStore.has(cid)) {
-    console.log(`[IPFS] Retrieved ${cid} from cache`);
-    return mockIpfsStore.get(cid)!;
+
+  const cached = mockIpfsStore.get(cid);
+  if (cached !== undefined) return cached;
+
+  try {
+    const row = await prisma.ipfsText.findUnique({ where: { cid } });
+    if (row?.content) {
+      mockIpfsStore.set(cid, row.content);
+      return row.content;
+    }
+  } catch (e) {
+    console.warn(`[IPFS] Durable cache lookup failed for ${cid}:`, e);
   }
-  
+
   for (const gateway of gateways()) {
     try {
       const cleanGateway = gateway.endsWith("/") ? gateway : `${gateway}/`;
@@ -85,15 +117,30 @@ export async function fetchFromIPFS(cid: string): Promise<string> {
       if (response.ok) {
         const text = await response.text();
         mockIpfsStore.set(cid, text);
+        await cacheTextDurably(cid, text);
         return text;
       }
     } catch {
       // Gateway failed, try next
     }
   }
-  
-  // Fallback: Return raw string
-  return cid;
+
+  // Last resort: the structured spec saved against this CID at decompose time
+  // still holds the exact markdown that was pinned.
+  try {
+    const draft = await prisma.specDraft.findUnique({ where: { cid } });
+    if (draft?.markdown) {
+      mockIpfsStore.set(cid, draft.markdown);
+      await cacheTextDurably(cid, draft.markdown);
+      console.log(`[IPFS] Recovered ${cid} from its stored spec draft`);
+      return draft.markdown;
+    }
+  } catch (e) {
+    console.warn(`[IPFS] Spec draft recovery failed for ${cid}:`, e);
+  }
+
+  console.warn(`[IPFS] Could not resolve ${cid} from cache, database, or any gateway`);
+  return "";
 }
 
 export async function pinToIPFS(content: string): Promise<string> {
@@ -126,6 +173,7 @@ export async function pinToIPFS(content: string): Promise<string> {
         const data = await response.json();
         if (data.IpfsHash) {
           mockIpfsStore.set(data.IpfsHash, content);
+          await cacheTextDurably(data.IpfsHash, content);
           console.log(`[IPFS] Pinned content to Pinata: ${data.IpfsHash}`);
           return data.IpfsHash;
         }
@@ -137,9 +185,12 @@ export async function pinToIPFS(content: string): Promise<string> {
     }
   }
 
-  // Resilient fallback: store locally in memory and return deterministic CID
+  // Resilient fallback: a deterministic local CID. It is not resolvable from any
+  // gateway, so the durable copy below is the only thing that keeps the text
+  // readable after this process exits.
   const cid = generateMockCID(content);
   mockIpfsStore.set(cid, content);
+  await cacheTextDurably(cid, content);
   console.log(`[IPFS] Stored content locally with CID: ${cid}`);
   return cid;
 }

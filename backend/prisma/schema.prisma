@@ -164,3 +164,16 @@ model Attachment {
   ephemeral        Boolean  @default(false)
   createdAt        DateTime @default(now())
 }
+
+/// Durable copy of every text blob we pin, keyed by its CID.
+///
+/// Without this the only copy of a task/subtask description outside IPFS lived in
+/// `mockIpfsStore`, a process-local Map. After a restart — or whenever a Pinata
+/// upload failed and `pinToIPFS` fell back to a locally generated CID that was
+/// never actually on IPFS — every gateway lookup missed and the UI rendered the
+/// bare CID where the description should be.
+model IpfsText {
+  cid       String   @id
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+}

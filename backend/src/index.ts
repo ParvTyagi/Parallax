@@ -14,6 +14,7 @@ import verifyRouter from "./routes/verify";
 import submissionsRouter from "./routes/submissions";
 import tasksRouter, { workersRouter } from "./routes/tasks";
 import ipfsRouter from "./routes/ipfs";
+import { hasPinataCredentials } from "./lib/ipfs";
 import { startJobWorker } from "./lib/worker";
 import rateLimit from "express-rate-limit";
 
@@ -58,7 +59,14 @@ app.use("/api/", (req, res, next) =>
 );
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "Parallax Backend is running securely" });
+  // `ipfsPinning` is the one that silently breaks things: without Pinata
+  // credentials every pin falls back to a locally generated CID that no gateway
+  // can resolve, so task descriptions come back empty on the next deploy.
+  res.json({
+    status: "ok",
+    message: "Parallax Backend is running securely",
+    ipfsPinning: hasPinataCredentials() ? "pinata" : "local-fallback"
+  });
 });
 
 app.use("/api/decompose", aiLimiter, decomposeRouter);
