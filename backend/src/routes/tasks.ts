@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { prisma } from "../db/client";
 import { fetchFromIPFS } from "../lib/ipfs";
+import { syncTransaction } from "../lib/chain";
+import { z } from "zod";
 
 const router = Router();
 
@@ -22,9 +24,7 @@ async function resolveSubtaskText(st: any) {
 async function resolveTaskText(task: any) {
   if (!task) return task;
   const taskDescText = await fetchFromIPFS(task.description);
-  const resolvedSubtasks = await Promise.all(
-    (task.subtasks || []).map(resolveSubtaskText)
-  );
+  const resolvedSubtasks = await Promise.all((task.subtasks || []).map(resolveSubtaskText));
   return {
     ...task,
     description: taskDescText || task.description,
@@ -33,13 +33,42 @@ async function resolveTaskText(task: any) {
   };
 }
 
+/// Wallets, RPC event decoding, and hand-typed URLs disagree on address casing.
+/// Matching exactly made a creator's own tasks invisible to them, so every
+/// address filter is case-insensitive.
+const addressFilter = (address: string) => ({
+  equals: address,
+  mode: "insensitive" as const
+});
+
+/// Indexes a just-confirmed transaction immediately instead of waiting for the
+/// block poller. The frontend calls this right after `tx.wait()` so a newly
+/// created task shows up at once. The receipt is re-read from the chain
+/// server-side, so this cannot be used to fabricate a task.
+const SyncSchema = z.object({ txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/) });
+
+router.post("/sync", async (req, res) => {
+  const parsed = SyncSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "A valid txHash is required" });
+  }
+
+  try {
+    const result = await syncTransaction(parsed.data.txHash);
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error("Error syncing transaction:", error);
+    res.status(502).json({ error: error?.message || "Failed to sync transaction" });
+  }
+});
+
 // Get all open subtasks for workers to claim
 router.get(["/open-subtasks", "/subtasks/open"], async (req, res) => {
   try {
     const subtasks = await prisma.subtask.findMany({
-      where: { worker: null },
+      where: { worker: null, state: "CREATED", task: { status: { notIn: ["CANCELLED", "COMPLETED"] } } },
       include: { task: true },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: "desc" }
     });
     const resolved = await Promise.all(
       subtasks.map(async (st) => {
@@ -65,11 +94,9 @@ router.get("/customer/:address", async (req, res) => {
   try {
     const { address } = req.params;
     const tasks = await prisma.task.findMany({
-      where: { creator: address },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        subtasks: true
-      }
+      where: { creator: addressFilter(address) },
+      orderBy: { createdAt: "desc" },
+      include: { subtasks: { orderBy: { createdAt: "asc" } } }
     });
     const resolved = await Promise.all(tasks.map(resolveTaskText));
     res.json(resolved);
@@ -84,8 +111,8 @@ router.get("/worker/:address", async (req, res) => {
   try {
     const { address } = req.params;
     const subtasks = await prisma.subtask.findMany({
-      where: { worker: address },
-      orderBy: { createdAt: 'desc' },
+      where: { worker: addressFilter(address) },
+      orderBy: { createdAt: "desc" },
       include: { task: true }
     });
     const resolved = await Promise.all(subtasks.map(resolveSubtaskText));
@@ -101,7 +128,7 @@ router.get("/disputes/open", async (req, res) => {
   try {
     const subtasks = await prisma.subtask.findMany({
       where: { state: "IN_DISPUTE" },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       include: { task: true }
     });
     const resolved = await Promise.all(subtasks.map(resolveSubtaskText));
@@ -120,13 +147,12 @@ router.get("/:taskId", async (req, res) => {
       where: { taskId },
       include: {
         subtasks: {
-          include: {
-            submissions: { orderBy: { createdAt: 'desc' }, take: 1 }
-          }
+          orderBy: { createdAt: "asc" },
+          include: { submissions: { orderBy: { createdAt: "desc" }, take: 1 } }
         }
       }
     });
-    
+
     if (!task) return res.status(404).json({ error: "Task not found" });
     const resolved = await resolveTaskText(task);
     res.json(resolved);
@@ -136,12 +162,27 @@ router.get("/:taskId", async (req, res) => {
   }
 });
 
-// Get worker profile (Reputation & claimed subtasks)
-router.get(["/worker-profile/:address", "/workers/:address"], async (req, res) => {
+// Backwards-compatible alias for older clients. Two path segments, so it does not
+// collide with GET /:taskId below it.
+router.get("/worker-profile/:address", (req, res, next) => {
+  req.url = `/${req.params.address}`;
+  workersRouter(req, res, next);
+});
+
+export default router;
+
+/// Mounted separately at /api/workers.
+///
+/// Previously the tasks router was double-mounted there, so `GET /api/workers/0x…`
+/// fell through to `GET /:taskId` and 404'd — which is why worker profiles and the
+/// marketplace's "my claimed tasks" panel came back empty.
+export const workersRouter = Router();
+
+workersRouter.get("/:address", async (req, res) => {
   try {
     const { address } = req.params;
-    let profile = await prisma.workerProfile.findUnique({
-      where: { address }
+    let profile = await prisma.workerProfile.findFirst({
+      where: { address: addressFilter(address) }
     });
 
     if (!profile) {
@@ -149,8 +190,8 @@ router.get(["/worker-profile/:address", "/workers/:address"], async (req, res) =
     }
 
     const claimedSubtasks = await prisma.subtask.findMany({
-      where: { worker: address },
-      orderBy: { createdAt: 'desc' },
+      where: { worker: addressFilter(address) },
+      orderBy: { createdAt: "desc" },
       include: { task: true }
     });
 
@@ -174,5 +215,3 @@ router.get(["/worker-profile/:address", "/workers/:address"], async (req, res) =
     res.status(500).json({ error: "Failed to fetch worker profile" });
   }
 });
-
-export default router;

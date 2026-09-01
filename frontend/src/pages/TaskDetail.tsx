@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { SubtaskSpec } from "../components/task/SubtaskSpec";
+import { TaskAttachments } from "../components/task/AttachmentPanel";
 import { useParams, Link } from "react-router-dom";
 import { ethers } from "ethers";
 import { useWeb3 } from "../contexts/Web3Context";
@@ -392,8 +394,25 @@ const TaskDetail = () => {
               </div>
 
               <h1 className="text-xl md:text-2xl font-bold tracking-tight text-base-content leading-snug">
-                {task.description}
+                {task.objective || task.description}
               </h1>
+
+              {task.successCriteria?.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-base-content/40 mb-1">
+                    Definition of done
+                  </p>
+                  <ul className="list-disc list-inside text-xs text-base-content/60 space-y-0.5">
+                    {task.successCriteria.map((c: string, i: number) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="pt-2">
+                <TaskAttachments description={task.description} />
+              </div>
 
               {(task.creator || task.customerAddress) && (
                 <div className="flex items-center gap-2 text-xs text-base-content/50 font-mono pt-1">
@@ -548,9 +567,7 @@ const TaskDetail = () => {
                         <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-base-content/40 block">
                           {st.rangeLabel || `Phase ${index + 1}`}
                         </span>
-                        <div className="text-sm font-medium text-base-content leading-relaxed bg-base-200/40 p-3 rounded-lg border border-base-300/60">
-                          {st.description}
-                        </div>
+                        <SubtaskSpec subtask={st} />
                       </div>
                     </div>
 

@@ -9,7 +9,9 @@ import {
   ArrowRight,
   Clock,
   Check,
+  Target,
 } from "lucide-react";
+import { subtaskHeadline } from "../components/task/SubtaskSpec";
 
 const TAG_MAP: Record<string, { label: string; cls: string }> = {
   json:            { label: "JSON",       cls: "badge-info badge-outline" },
@@ -82,12 +84,12 @@ const WorkerTasks = () => {
 
   const filtered = subtasks
     .filter((st) => {
-      const desc = st.description?.toLowerCase() || "";
+      const desc = `${st.rangeLabel || ""} ${st.objective || ""} ${st.skills?.join(" ") || ""} ${st.description || ""}`.toLowerCase();
       const matchesSearch = !searchQuery || desc.includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
       if (selectedCategory === "ALL") return true;
-      const tags = getAutoTags(st.description || "").map((t) => t.label);
+      const tags = getAutoTags(`${st.objective || st.description || ""} ${st.skills?.join(" ") || ""}`).map((t) => t.label);
       return tags.includes(selectedCategory);
     })
     .sort((a, b) => {
@@ -258,7 +260,7 @@ const WorkerTasks = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filtered.map((st) => {
-                const tags = getAutoTags(st.description || "");
+                const tags = getAutoTags(`${st.objective || st.description || ""} ${st.skills?.join(" ") || ""}`);
                 return (
                   <div
                     key={st.subtaskId}
@@ -281,10 +283,41 @@ const WorkerTasks = () => {
                         </span>
                       </div>
 
-                      {/* Title / Description */}
-                      <p className="text-sm font-semibold text-base-content leading-snug line-clamp-3 group-hover:text-primary transition-colors">
-                        {st.description}
-                      </p>
+                      {/* Title / Objective */}
+                      <div>
+                        <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-base-content/40 mb-1">
+                          {st.rangeLabel || "Subtask"}
+                        </p>
+                        <p className="text-sm font-semibold text-base-content leading-snug line-clamp-3 group-hover:text-primary transition-colors">
+                          {subtaskHeadline(st)}
+                        </p>
+                      </div>
+
+                      {/* What "done" means — the bar this submission is graded against. */}
+                      {st.acceptanceCriteria?.length > 0 && (
+                        <div className="text-[11px] text-base-content/50 space-y-1">
+                          <span className="flex items-center gap-1 font-bold uppercase tracking-wider text-base-content/40">
+                            <Target className="w-3 h-3" />
+                            {st.acceptanceCriteria.length} acceptance criteria
+                          </span>
+                          <ul className="space-y-0.5">
+                            {st.acceptanceCriteria.slice(0, 2).map((c: string, i: number) => (
+                              <li key={i} className="line-clamp-1">• {c}</li>
+                            ))}
+                            {st.acceptanceCriteria.length > 2 && (
+                              <li className="italic opacity-70">
+                                +{st.acceptanceCriteria.length - 2} more
+                              </li>
+                            )}
+                          </ul>
+                        </div>
+                      )}
+
+                      {st.deliverableFormat && (
+                        <p className="text-[11px] text-base-content/45 line-clamp-1">
+                          <span className="font-semibold">Deliver as:</span> {st.deliverableFormat}
+                        </p>
+                      )}
 
                       {/* Category Tags */}
                       {tags.length > 0 && (
@@ -383,7 +416,7 @@ const WorkerTasks = () => {
                     </div>
 
                     <p className="text-sm font-semibold text-base-content leading-snug line-clamp-3">
-                      {st.description}
+                      {subtaskHeadline(st)}
                     </p>
 
                     <div className="flex justify-between items-center pt-2 border-t border-base-300/60 text-xs text-primary font-semibold">
@@ -453,7 +486,7 @@ const WorkerTasks = () => {
                     </div>
 
                     <p className="text-sm font-semibold text-base-content leading-snug line-clamp-3">
-                      {st.task?.description || st.description}
+                      {st.task?.objective || subtaskHeadline(st)}
                     </p>
 
                     <div className="flex justify-between items-center pt-2 border-t border-base-300/60 text-xs text-base-content/50 group-hover:text-base-content font-medium">

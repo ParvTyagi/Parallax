@@ -5,14 +5,16 @@ import { API_URL } from "../lib/constants";
 import { Link } from "react-router-dom";
 import { ReviewSubtasksModal, type DraftSubtask } from "../components/task/ReviewSubtasksModal";
 import {
+  AttachmentUploader,
+  formatBytes,
+  type UploadedAttachment,
+} from "../components/task/AttachmentUploader";
+import {
   Layers,
   CheckCircle2,
   Coins,
   Sparkles,
   Shield,
-  UploadCloud,
-  FileText,
-  X,
   ArrowRight,
   AlertCircle,
   Clock,
@@ -56,7 +58,7 @@ const CustomerDashboard = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [errorText, setErrorText] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [attachment, setAttachment] = useState<UploadedAttachment | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [aiModel, setAiModel] = useState("gemini-3.7-flash");
   const [activeTab, setActiveTab] = useState<"create" | "tasks">("create");
@@ -67,7 +69,21 @@ const CustomerDashboard = () => {
   const [draftDecomposition, setDraftDecomposition] = useState<{
     masterTask: string;
     masterTaskCID: string;
-    subtasks: Array<{ rangeLabel: string; description: string; descriptionCID: string; reward: number; leaseDuration: number }>;
+    masterObjective?: string;
+    successCriteria?: string[];
+    subtasks: Array<{
+      rangeLabel: string;
+      description?: string;
+      descriptionCID: string;
+      objective?: string;
+      contextNotes?: string;
+      acceptanceCriteria?: string[];
+      deliverableFormat?: string;
+      skills?: string[];
+      estimatedMinutes?: number;
+      reward: number;
+      leaseDuration: number;
+    }>;
   } | null>(null);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
 
@@ -76,13 +92,17 @@ const CustomerDashboard = () => {
     else setMyTasks([]);
   }, [account]);
 
+  // Poll for as long as a wallet is connected.
+  //
+  // This used to be gated on `myTasks.length > 0`, which deadlocked every
+  // first-time creator: the task list starts empty, so polling never started, so
+  // the task the backend indexed a few seconds later was never picked up and the
+  // dashboard stayed blank until a manual page reload.
   useEffect(() => {
-    let interval: any;
-    if (account && myTasks.length > 0) {
-      interval = setInterval(() => fetchCustomerTasks(account), 5000);
-    }
+    if (!account) return;
+    const interval = setInterval(() => fetchCustomerTasks(account), 5000);
     return () => clearInterval(interval);
-  }, [account, myTasks.length]);
+  }, [account]);
 
   const fetchCustomerTasks = async (walletAddress: string) => {
     try {
@@ -91,6 +111,44 @@ const CustomerDashboard = () => {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  /// Asks the backend to index this transaction straight from its receipt rather
+  /// than waiting for the block poller to reach it. Best-effort: if it fails the
+  /// poller still picks the task up, it just takes a few seconds longer.
+  const syncTaskTx = async (txHash: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/tasks/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txHash }),
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn("Task sync failed, falling back to the chain poller:", e);
+      return false;
+    }
+  };
+
+  /// Waits until the task actually appears in the indexer before declaring
+  /// success, so the creator is never dropped onto an empty "My Tasks" tab.
+  const waitForIndexedTask = async (walletAddress: string, previousCount: number) => {
+    for (let attempt = 0; attempt < 15; attempt++) {
+      try {
+        const res = await fetch(`${API_URL}/api/tasks/customer/${walletAddress}`);
+        if (res.ok) {
+          const tasks = await res.json();
+          if (Array.isArray(tasks) && tasks.length > previousCount) {
+            setMyTasks(tasks);
+            return true;
+          }
+        }
+      } catch {
+        // Keep retrying — a transient failure shouldn't end the wait.
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    return false;
   };
 
   const handleDecompose = async () => {
@@ -110,17 +168,14 @@ const CustomerDashboard = () => {
         finalDescription = `[ENCRYPTED_LIT_PROTOCOL_PAYLOAD] Original length: ${description.length}\n${finalDescription}`;
       }
 
-      if (file) {
-        setStatusText("Uploading dataset attachment to IPFS…");
-        const formData = new FormData();
-        formData.append("file", file);
-        const fileRes = await fetch(`${API_URL}/api/ipfs/upload-file`, {
-          method: "POST",
-          body: formData,
-        });
-        const fileData = await fileRes.json();
-        if (!fileRes.ok) throw new Error(fileData.error || "File upload failed");
-        finalDescription += `\n\nAttached Dataset CID: ${fileData.cid}`;
+      if (attachment) {
+        // The uploader already pinned this, so only the reference is appended here.
+        // `ipfs://<cid>` is the marker the task page parses back out to render a
+        // browsable, downloadable attachment panel.
+        const detail = attachment.isArchive && attachment.entryCount
+          ? `${attachment.filename} (${attachment.entryCount} files, ${formatBytes(attachment.size)})`
+          : `${attachment.filename} (${formatBytes(attachment.size)})`;
+        finalDescription += `\n\nAttached Dataset: ${detail} - ipfs://${attachment.cid}`;
       }
 
       setStatusText("Pinning master task spec to IPFS…");
@@ -144,6 +199,8 @@ const CustomerDashboard = () => {
       setDraftDecomposition({
         masterTask: data.masterTask,
         masterTaskCID: data.masterTaskCID,
+        masterObjective: data.masterObjective,
+        successCriteria: data.successCriteria,
         subtasks: data.subtasks,
       });
       setIsReviewOpen(true);
@@ -168,18 +225,32 @@ const CustomerDashboard = () => {
     setIsProcessing(true);
     setErrorText("");
     try {
-      setStatusText("Pinning edited subtask descriptions to IPFS…");
+      setStatusText("Pinning edited subtask specs to IPFS…");
       const resolvedSubtasks = await Promise.all(
         result.finalSubtasks.map(async (st) => {
-          // On-chain `description` is always resolved as an IPFS CID (see backend/src/lib/chain.ts),
-          // so any edited or manually-added row needs a fresh pin before it can go on-chain.
+          // On-chain `description` is always an IPFS CID (see backend/src/lib/chain.ts),
+          // so any edited or manually-added row needs a fresh pin before it can go
+          // on-chain. `/respec` re-renders the markdown brief AND re-saves the
+          // structured spec against the new CID, so the acceptance criteria the
+          // verifier later grades against always match what the creator approved.
           if (!st.isEdited && st.descriptionCID) {
             return { ...st, descriptionCID: st.descriptionCID };
           }
-          const pinRes = await fetch(`${API_URL}/api/ipfs/upload`, {
+          const pinRes = await fetch(`${API_URL}/api/decompose/respec`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: st.description }),
+            body: JSON.stringify({
+              rangeLabel: st.rangeLabel,
+              objective: st.objective,
+              contextNotes: st.contextNotes,
+              acceptanceCriteria: st.acceptanceCriteria.filter((c) => c.trim()),
+              deliverableFormat: st.deliverableFormat,
+              skills: st.skills,
+              estimatedMinutes: st.estimatedMinutes,
+              reward: parseFloat(st.reward) || 0,
+              leaseDuration: st.leaseDuration,
+              masterObjective: draftDecomposition?.masterObjective || "",
+            }),
           });
           const pinData = await pinRes.json();
           if (!pinRes.ok) throw new Error(pinData.error || "IPFS upload failed for an edited subtask");
@@ -214,18 +285,25 @@ const CustomerDashboard = () => {
       setStatusText("Transaction submitted! Waiting for Monad confirmation…");
       await tx.wait();
 
-      setStatusText("Task published to Monad Testnet!");
-      setTimeout(() => {
-        setIsProcessing(false);
-        setStatusText("");
-        setDescription("");
-        setBudget("");
-        setFile(null);
-        setIsPrivate(false);
-        setDraftDecomposition(null);
-        if (account) fetchCustomerTasks(account);
-        setActiveTab("tasks");
-      }, 2000);
+      setStatusText("Confirmed. Indexing your task…");
+      const previousCount = myTasks.length;
+      await syncTaskTx(tx.hash);
+
+      setDescription("");
+      setBudget("");
+      setAttachment(null);
+      setIsPrivate(false);
+      setDraftDecomposition(null);
+      setActiveTab("tasks");
+
+      const appeared = account ? await waitForIndexedTask(account, previousCount) : false;
+      setStatusText("");
+      setIsProcessing(false);
+      if (!appeared) {
+        setErrorText(
+          `Task was published on-chain (tx ${tx.hash.slice(0, 10)}…) but the indexer hasn't caught up yet. It will appear here shortly.`
+        );
+      }
     } catch (error: any) {
       console.error("Task creation error:", error);
       const friendlyError =
@@ -457,44 +535,18 @@ const CustomerDashboard = () => {
                 {/* Dataset Attachment (optional) */}
                 <div className="space-y-1.5 pt-2 border-t border-base-300/60">
                   <label className="text-xs font-bold text-base-content uppercase tracking-wider">
-                    Attach Dataset / Spec File (optional)
+                    Attach Dataset / Spec Files (optional)
                   </label>
-                  {!file ? (
-                    <label className="border border-dashed border-base-300 hover:border-base-content/40 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-base-200/40 transition-colors">
-                      <UploadCloud className="w-5 h-5 text-base-content/50" />
-                      <span className="text-xs font-semibold text-base-content/70">
-                        Click to upload PDF, CSV, JSON, or TXT
-                      </span>
-                      <span className="text-[10px] text-base-content/40">
-                        Dataset is pinned to IPFS for worker access
-                      </span>
-                      <input
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => setFile(e.target.files?.[0] || null)}
-                        disabled={isProcessing}
-                      />
-                    </label>
-                  ) : (
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-base-200 border border-base-300">
-                      <div className="flex items-center gap-2 truncate">
-                        <FileText className="w-4 h-4 text-primary shrink-0" />
-                        <span className="text-xs font-medium text-base-content truncate">
-                          {file.name}
-                        </span>
-                        <span className="text-[10px] text-base-content/50 font-mono">
-                          ({(file.size / 1024).toFixed(1)} KB)
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setFile(null)}
-                        className="btn btn-ghost btn-xs btn-square"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  <p className="text-[11px] text-base-content/40">
+                    Pick several files or a whole folder. They are zipped in your browser before
+                    upload, pinned to IPFS as one archive, and workers can browse or download
+                    individual files from the task page.
+                  </p>
+                  <AttachmentUploader
+                    attachment={attachment}
+                    onChange={setAttachment}
+                    disabled={isProcessing}
+                  />
                 </div>
 
                 {/* AI Model & Lit Privacy */}
@@ -552,6 +604,8 @@ const CustomerDashboard = () => {
                     open={isReviewOpen}
                     masterTask={draftDecomposition.masterTask}
                     masterTaskCID={draftDecomposition.masterTaskCID}
+                    masterObjective={draftDecomposition.masterObjective}
+                    successCriteria={draftDecomposition.successCriteria}
                     budget={budget}
                     subtasks={draftDecomposition.subtasks}
                     onConfirm={handleConfirmCreateTask}

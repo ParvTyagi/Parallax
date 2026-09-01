@@ -1,7 +1,71 @@
 import crypto from "crypto";
 
-// Persistent in-memory cache for IPFS hashes
+// Persistent in-memory cache for IPFS hashes (text content only).
 export const mockIpfsStore = new Map<string, string>();
+
+/// Binary fallback store, kept separate from the text cache.
+///
+/// `pinFileBufferToIPFS` used to stuff `buffer.toString("utf-8")` into the text
+/// map, which silently corrupts every non-text upload — a zip round-tripped
+/// through it comes back unopenable. Binary bytes now stay bytes.
+export interface StoredBinary {
+  buffer: Buffer;
+  mimetype: string;
+  filename: string;
+}
+export const mockIpfsBinaryStore = new Map<string, StoredBinary>();
+
+/// True when the bytes for this CID only exist in this process's memory, so they
+/// will not survive a restart and are not reachable from any IPFS gateway.
+export function isEphemeral(cid: string): boolean {
+  return mockIpfsBinaryStore.has(cid) && !hasPinataCredentials();
+}
+
+export function hasPinataCredentials(): boolean {
+  return Boolean(
+    process.env.PINATA_JWT || (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_API_KEY)
+  );
+}
+
+function gateways(): string[] {
+  return [
+    process.env.IPFS_GATEWAY,
+    "https://gateway.pinata.cloud/ipfs/",
+    "https://cloudflare-ipfs.com/ipfs/",
+    "https://ipfs.io/ipfs/"
+  ].filter(Boolean) as string[];
+}
+
+/// Fetches raw bytes for a CID — used for dataset attachments, which are usually
+/// archives and must never be coerced through a string.
+export async function fetchBinaryFromIPFS(cid: string): Promise<StoredBinary | null> {
+  if (!cid) return null;
+
+  const cached = mockIpfsBinaryStore.get(cid);
+  if (cached) return cached;
+
+  for (const gateway of gateways()) {
+    try {
+      const cleanGateway = gateway.endsWith("/") ? gateway : `${gateway}/`;
+      // Archives can be large, so allow a much longer window than text fetches.
+      const response = await fetch(`${cleanGateway}${cid}`, { signal: AbortSignal.timeout(60000) });
+      if (response.ok) {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const stored: StoredBinary = {
+          buffer,
+          mimetype: response.headers.get("content-type") || "application/octet-stream",
+          filename: cid
+        };
+        mockIpfsBinaryStore.set(cid, stored);
+        return stored;
+      }
+    } catch {
+      // Gateway failed, try next.
+    }
+  }
+
+  return null;
+}
 
 function generateMockCID(content: string | Buffer): string {
   const hash = crypto.createHash("sha256").update(content).digest("hex");
@@ -16,15 +80,7 @@ export async function fetchFromIPFS(cid: string): Promise<string> {
     return mockIpfsStore.get(cid)!;
   }
   
-  // Public IPFS gateways to try
-  const gateways = [
-    process.env.IPFS_GATEWAY,
-    "https://gateway.pinata.cloud/ipfs/",
-    "https://cloudflare-ipfs.com/ipfs/",
-    "https://ipfs.io/ipfs/"
-  ].filter(Boolean) as string[];
-
-  for (const gateway of gateways) {
+  for (const gateway of gateways()) {
     try {
       const cleanGateway = gateway.endsWith("/") ? gateway : `${gateway}/`;
       const url = `${cleanGateway}${cid}`;
@@ -114,13 +170,15 @@ export async function pinFileBufferToIPFS(buffer: Buffer, filename: string, mime
         method: "POST",
         headers,
         body: formData as any,
-        signal: AbortSignal.timeout(10000)
+        // A fixed 10s budget silently failed every large attachment over to the
+        // in-memory fallback. Scale with size, assuming a pessimistic 512 KB/s.
+        signal: AbortSignal.timeout(Math.min(300000, Math.max(30000, buffer.length / 512)))
       });
 
       if (response.ok) {
         const data = await response.json();
         if (data.IpfsHash) {
-          mockIpfsStore.set(data.IpfsHash, buffer.toString("utf-8"));
+          mockIpfsBinaryStore.set(data.IpfsHash, { buffer, mimetype: mimeType, filename });
           console.log(`[IPFS] Pinned file ${filename} to Pinata: ${data.IpfsHash}`);
           return data.IpfsHash;
         }
@@ -133,7 +191,7 @@ export async function pinFileBufferToIPFS(buffer: Buffer, filename: string, mime
   }
 
   const cid = generateMockCID(buffer);
-  mockIpfsStore.set(cid, buffer.toString("utf-8"));
-  console.log(`[IPFS] Stored file ${filename} locally with CID: ${cid}`);
+  mockIpfsBinaryStore.set(cid, { buffer, mimetype: mimeType, filename });
+  console.log(`[IPFS] Stored file ${filename} locally with CID: ${cid} (in-memory only)`);
   return cid;
 }
