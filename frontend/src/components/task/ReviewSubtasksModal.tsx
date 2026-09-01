@@ -198,7 +198,7 @@ export function ReviewSubtasksModal({
           <div className="rounded-lg border border-base-300 bg-base-200/40 p-3 mb-4 text-sm">
             {masterObjective && (
               <>
-                <div className="text-xs font-semibold uppercase tracking-wide text-base-content/50 mb-1">
+                <div className="text-xs font-semibold uppercase tracking-wide text-base-content/60 mb-1">
                   Overall objective
                 </div>
                 <p className="text-base-content/80 leading-relaxed">{masterObjective}</p>
@@ -206,7 +206,7 @@ export function ReviewSubtasksModal({
             )}
             {successCriteria && successCriteria.length > 0 && (
               <>
-                <div className="text-xs font-semibold uppercase tracking-wide text-base-content/50 mt-3 mb-1">
+                <div className="text-xs font-semibold uppercase tracking-wide text-base-content/60 mt-3 mb-1">
                   Definition of done
                 </div>
                 <ul className="list-disc list-inside text-base-content/70 space-y-0.5">
@@ -231,7 +231,7 @@ export function ReviewSubtasksModal({
                   className="btn btn-ghost btn-xs btn-square absolute right-2 top-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   aria-label="Remove subtask"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X aria-hidden="true" className="h-3.5 w-3.5" />
                 </button>
 
                 <div className="flex items-center gap-2 mb-2 pr-8">
@@ -241,14 +241,19 @@ export function ReviewSubtasksModal({
                     value={row.rangeLabel}
                     onChange={(e) => updateRow(row.id, { rangeLabel: e.target.value })}
                     placeholder="Subtask label"
+                    aria-label={`Subtask ${rowIndex + 1} label`}
                     className="input input-bordered input-sm w-full font-medium"
                   />
                 </div>
 
-                <label className="text-xs font-semibold uppercase tracking-wide text-base-content/50 mb-1 block">
+                <label
+                  htmlFor={`subtask-objective-${row.id}`}
+                  className="text-xs font-semibold uppercase tracking-wide text-base-content/60 mb-1 block"
+                >
                   Objective — what the worker must produce
                 </label>
                 <textarea
+                  id={`subtask-objective-${row.id}`}
                   value={row.objective}
                   onChange={(e) => updateRow(row.id, { objective: e.target.value })}
                   placeholder="Be concrete about scope, quantity, and depth."
@@ -257,7 +262,7 @@ export function ReviewSubtasksModal({
                 />
 
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-base-content/50 flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-base-content/60 flex items-center gap-1.5">
                     <ListChecks className="h-3.5 w-3.5" />
                     Acceptance criteria
                     <span
@@ -269,9 +274,15 @@ export function ReviewSubtasksModal({
                   <button
                     type="button"
                     onClick={() => setExpanded((p) => ({ ...p, [row.id]: !isOpen }))}
+                    aria-expanded={isOpen}
+                    aria-label={`${isOpen ? "Hide" : "Edit"} acceptance criteria for subtask ${rowIndex + 1}`}
                     className="btn btn-ghost btn-xs gap-1"
                   >
-                    {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    {isOpen ? (
+                      <ChevronDown aria-hidden="true" className="h-3 w-3" />
+                    ) : (
+                      <ChevronRight aria-hidden="true" className="h-3 w-3" />
+                    )}
                     {isOpen ? "Hide" : "Edit"}
                   </button>
                 </div>
@@ -293,6 +304,7 @@ export function ReviewSubtasksModal({
                           value={criterion}
                           onChange={(e) => updateCriterion(row.id, i, e.target.value)}
                           placeholder="Objectively checkable, e.g. 'cites at least 5 sources with URLs'"
+                          aria-label={`Acceptance criterion ${i + 1} for subtask ${rowIndex + 1}`}
                           className="input input-bordered input-xs w-full"
                         />
                         <button
@@ -301,7 +313,7 @@ export function ReviewSubtasksModal({
                           className="btn btn-ghost btn-xs btn-square"
                           aria-label="Remove criterion"
                         >
-                          <X className="h-3 w-3" />
+                          <X aria-hidden="true" className="h-3 w-3" />
                         </button>
                       </div>
                     ))}
@@ -310,13 +322,17 @@ export function ReviewSubtasksModal({
                       onClick={() => addCriterion(row.id)}
                       className="btn btn-ghost btn-xs self-start gap-1"
                     >
-                      <Plus className="h-3 w-3" /> Add criterion
+                      <Plus aria-hidden="true" className="h-3 w-3" /> Add criterion
                     </button>
 
-                    <label className="text-xs font-semibold uppercase tracking-wide text-base-content/50 mt-2">
+                    <label
+                      htmlFor={`subtask-format-${row.id}`}
+                      className="text-xs font-semibold uppercase tracking-wide text-base-content/60 mt-2"
+                    >
                       Deliverable format
                     </label>
                     <input
+                      id={`subtask-format-${row.id}`}
                       type="text"
                       value={row.deliverableFormat}
                       onChange={(e) => updateRow(row.id, { deliverableFormat: e.target.value })}
@@ -324,10 +340,14 @@ export function ReviewSubtasksModal({
                       className="input input-bordered input-xs w-full"
                     />
 
-                    <label className="text-xs font-semibold uppercase tracking-wide text-base-content/50 mt-2">
+                    <label
+                      htmlFor={`subtask-context-${row.id}`}
+                      className="text-xs font-semibold uppercase tracking-wide text-base-content/60 mt-2"
+                    >
                       Context the worker can't guess (optional)
                     </label>
                     <textarea
+                      id={`subtask-context-${row.id}`}
                       value={row.contextNotes}
                       onChange={(e) => updateRow(row.id, { contextNotes: e.target.value })}
                       rows={2}

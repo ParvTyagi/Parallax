@@ -114,7 +114,7 @@ export default function AdminDashboard() {
     return (
       <div className="flex flex-col items-center justify-center min-h-80 gap-3">
         <span className="loading loading-spinner loading-md text-primary" />
-        <span className="text-xs text-base-content/50 font-medium">Verifying admin access…</span>
+        <span className="text-xs text-base-content/60 font-medium">Verifying admin access…</span>
       </div>
     );
   }
@@ -127,7 +127,7 @@ export default function AdminDashboard() {
             <AlertTriangle className="w-6 h-6" />
           </div>
           <h3 className="text-base font-bold text-base-content">Access Restricted</h3>
-          <p className="text-xs text-base-content/50">
+          <p className="text-xs text-base-content/60">
             This section is restricted to the ParallaxTaskManager's on-chain{" "}
             <code className="font-mono text-[11px]">admin()</code> address
             {adminAddress ? (
@@ -166,13 +166,13 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-5">
-            <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
+            <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
               Lifetime Protocol Revenue
             </span>
             <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
-              {balance} <span className="text-sm font-sans font-medium text-base-content/50">MON</span>
+              {balance} <span className="text-sm font-sans font-medium text-base-content/60">MON</span>
             </div>
-            <span className="text-[11px] text-base-content/40">
+            <span className="text-[11px] text-base-content/60">
               Already forwarded to the treasury wallet — nothing sits locked in-contract to withdraw.
             </span>
           </div>
@@ -180,25 +180,25 @@ export default function AdminDashboard() {
 
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-5">
-            <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
+            <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
               Platform Take Rate
             </span>
             <div className="text-2xl md:text-3xl font-bold font-mono text-success">
               5.0%
             </div>
-            <span className="text-[11px] text-base-content/40">Deducted on successful settlement</span>
+            <span className="text-[11px] text-base-content/60">Deducted on successful settlement</span>
           </div>
         </div>
 
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-5">
-            <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
+            <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
               Slash Seizure Rate
             </span>
             <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
               100%
             </div>
-            <span className="text-[11px] text-base-content/40">Of slashed worker bonds</span>
+            <span className="text-[11px] text-base-content/60">Of slashed worker bonds</span>
           </div>
         </div>
       </div>
@@ -215,7 +215,7 @@ export default function AdminDashboard() {
           </div>
 
           {disputes.length === 0 ? (
-            <p className="text-xs text-base-content/50 py-4">No open disputes.</p>
+            <p className="text-xs text-base-content/60 py-4">No open disputes.</p>
           ) : (
             <div className="space-y-3">
               {disputes.map((d) => (
@@ -223,7 +223,7 @@ export default function AdminDashboard() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-base-content">{d.description}</p>
-                      <p className="text-[11px] text-base-content/50 font-mono mt-0.5">
+                      <p className="text-[11px] text-base-content/60 font-mono mt-0.5">
                         Task #{d.taskId?.slice(0, 8)} · Worker {d.worker?.slice(0, 8)}…{d.worker?.slice(-4)}
                       </p>
                     </div>
@@ -267,10 +267,12 @@ export default function AdminDashboard() {
             </p>
             <div className="flex items-center gap-2">
               <input
+                id="admin-bond-amount"
                 type="number"
                 min="0"
                 step="0.001"
                 placeholder="New bond amount (MON)"
+                aria-label="New worker bond amount in MON"
                 className="input input-sm input-bordered flex-1 text-xs"
                 value={newBondAmount}
                 onChange={(e) => setNewBondAmount(e.target.value)}
@@ -296,7 +298,7 @@ export default function AdminDashboard() {
             <div className="overflow-x-auto">
               <table className="table table-sm w-full">
                 <thead>
-                  <tr className="border-b border-base-300 text-base-content/50 text-[11px] uppercase tracking-wider">
+                  <tr className="border-b border-base-300 text-base-content/60 text-[11px] uppercase tracking-wider">
                     <th className="font-semibold py-2.5">Revenue Stream</th>
                     <th className="font-semibold py-2.5">Trigger Condition</th>
                     <th className="font-semibold py-2.5">Rate</th>

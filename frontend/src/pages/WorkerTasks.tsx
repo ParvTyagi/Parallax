@@ -106,7 +106,7 @@ const WorkerTasks = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-80 gap-3">
         <span className="loading loading-spinner loading-md text-primary" />
-        <span className="text-xs text-base-content/50 font-medium">Loading marketplace…</span>
+        <span className="text-xs text-base-content/60 font-medium">Loading marketplace…</span>
       </div>
     );
   }
@@ -128,7 +128,7 @@ const WorkerTasks = () => {
         {account && profile && (
           <div className="flex items-center gap-3 bg-base-100 border border-base-300/80 rounded-xl p-3 shadow-xs shrink-0">
             <div className="px-3 border-r border-base-300">
-              <span className="text-[10px] font-bold text-base-content/40 uppercase block">Reputation</span>
+              <span className="text-[10px] font-bold text-base-content/60 uppercase block">Reputation</span>
               <div className="flex items-center gap-1.5 font-mono font-bold text-base text-base-content">
                 <span>{profile.reputationScore}</span>
                 {profile.reputationScore >= 80 && (
@@ -138,7 +138,7 @@ const WorkerTasks = () => {
             </div>
 
             <div className="px-3">
-              <span className="text-[10px] font-bold text-base-content/40 uppercase block">Completed</span>
+              <span className="text-[10px] font-bold text-base-content/60 uppercase block">Completed</span>
               <span className="font-mono font-bold text-base text-success">
                 {profile.successfulTasks ?? 0}
               </span>
@@ -155,7 +155,7 @@ const WorkerTasks = () => {
           className={`pb-3 text-sm font-semibold transition-all relative flex items-center gap-2 ${
             activeTab === "available"
               ? "text-base-content font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
-              : "text-base-content/50 hover:text-base-content"
+              : "text-base-content/60 hover:text-base-content"
           }`}
         >
           <span>Available Tasks</span>
@@ -167,7 +167,7 @@ const WorkerTasks = () => {
           className={`pb-3 text-sm font-semibold transition-all relative flex items-center gap-2 ${
             activeTab === "active"
               ? "text-base-content font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
-              : "text-base-content/50 hover:text-base-content"
+              : "text-base-content/60 hover:text-base-content"
           }`}
         >
           <span>Active Work</span>
@@ -183,7 +183,7 @@ const WorkerTasks = () => {
           className={`pb-3 text-sm font-semibold transition-all relative flex items-center gap-2 ${
             activeTab === "completed"
               ? "text-base-content font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
-              : "text-base-content/50 hover:text-base-content"
+              : "text-base-content/60 hover:text-base-content"
           }`}
         >
           <span>Completed</span>
@@ -200,10 +200,15 @@ const WorkerTasks = () => {
           <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
             {/* Search */}
             <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
+              <Search
+                aria-hidden="true"
+                className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/60"
+              />
               <input
-                type="text"
+                id="worker-task-search"
+                type="search"
                 placeholder="Search by keywords (e.g. DeFi, smart contract, JSON)…"
+                aria-label="Search open subtasks by keyword"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="input input-sm input-bordered w-full pl-9 text-xs"
@@ -212,8 +217,11 @@ const WorkerTasks = () => {
 
             {/* Sort */}
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs text-base-content/50 font-medium">Sort by:</span>
+              <span id="worker-sort-label" className="text-xs text-base-content/60 font-medium">
+                Sort by:
+              </span>
               <select
+                aria-labelledby="worker-sort-label"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
                 className="select select-sm select-bordered text-xs"
@@ -225,11 +233,12 @@ const WorkerTasks = () => {
           </div>
 
           {/* Category Chips */}
-          <div className="flex flex-wrap gap-1.5 pb-2">
+          <div role="group" aria-label="Filter by category" className="flex flex-wrap gap-1.5 pb-2">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat}
                 type="button"
+                aria-pressed={selectedCategory === cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={`btn btn-xs rounded-lg text-[11px] font-medium transition-all ${
                   selectedCategory === cat
@@ -246,11 +255,11 @@ const WorkerTasks = () => {
           {filtered.length === 0 ? (
             <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
               <div className="max-w-md mx-auto space-y-3">
-                <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/40">
+                <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/60">
                   <Search className="w-6 h-6" />
                 </div>
                 <h3 className="text-base font-bold text-base-content">No available tasks found</h3>
-                <p className="text-xs text-base-content/50">
+                <p className="text-xs text-base-content/60">
                   {searchQuery || selectedCategory !== "ALL"
                     ? "Try adjusting your search terms or category filters."
                     : "There are currently no open subtasks in the marketplace. Check back soon!"}
@@ -274,7 +283,7 @@ const WorkerTasks = () => {
                           <span className="badge badge-success badge-xs font-mono font-bold">
                             OPEN
                           </span>
-                          <span className="text-[10px] font-mono text-base-content/40 uppercase">
+                          <span className="text-[10px] font-mono text-base-content/60 uppercase">
                             #{st.subtaskId?.slice(0, 6)}
                           </span>
                         </div>
@@ -285,7 +294,7 @@ const WorkerTasks = () => {
 
                       {/* Title / Objective */}
                       <div>
-                        <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-base-content/40 mb-1">
+                        <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-base-content/60 mb-1">
                           {st.rangeLabel || "Subtask"}
                         </p>
                         <p className="text-sm font-semibold text-base-content leading-snug line-clamp-3 group-hover:text-primary transition-colors">
@@ -295,8 +304,8 @@ const WorkerTasks = () => {
 
                       {/* What "done" means — the bar this submission is graded against. */}
                       {st.acceptanceCriteria?.length > 0 && (
-                        <div className="text-[11px] text-base-content/50 space-y-1">
-                          <span className="flex items-center gap-1 font-bold uppercase tracking-wider text-base-content/40">
+                        <div className="text-[11px] text-base-content/60 space-y-1">
+                          <span className="flex items-center gap-1 font-bold uppercase tracking-wider text-base-content/60">
                             <Target className="w-3 h-3" />
                             {st.acceptanceCriteria.length} acceptance criteria
                           </span>
@@ -314,7 +323,7 @@ const WorkerTasks = () => {
                       )}
 
                       {st.deliverableFormat && (
-                        <p className="text-[11px] text-base-content/45 line-clamp-1">
+                        <p className="text-[11px] text-base-content/60 line-clamp-1">
                           <span className="font-semibold">Deliver as:</span> {st.deliverableFormat}
                         </p>
                       )}
@@ -359,9 +368,9 @@ const WorkerTasks = () => {
           {!account ? (
             <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
               <div className="max-w-md mx-auto space-y-4">
-                <Coins className="w-10 h-10 mx-auto text-base-content/50" />
+                <Coins className="w-10 h-10 mx-auto text-base-content/60" />
                 <h3 className="text-base font-bold text-base-content">Connect Wallet</h3>
-                <p className="text-xs text-base-content/50">
+                <p className="text-xs text-base-content/60">
                   Connect your wallet to see the tasks you have claimed and are actively working on.
                 </p>
                 <button onClick={connectWallet} className="btn btn-neutral btn-sm font-semibold">
@@ -372,11 +381,11 @@ const WorkerTasks = () => {
           ) : activeTasks.length === 0 ? (
             <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
               <div className="max-w-md mx-auto space-y-3">
-                <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/40">
+                <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/60">
                   <Clock className="w-6 h-6" />
                 </div>
                 <h3 className="text-base font-bold text-base-content">No active work</h3>
-                <p className="text-xs text-base-content/50">
+                <p className="text-xs text-base-content/60">
                   You haven't claimed any tasks yet. Browse available tasks and claim one to start earning!
                 </p>
                 <button
@@ -445,9 +454,9 @@ const WorkerTasks = () => {
           {!account ? (
             <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
               <div className="max-w-md mx-auto space-y-4">
-                <Coins className="w-10 h-10 mx-auto text-base-content/50" />
+                <Coins className="w-10 h-10 mx-auto text-base-content/60" />
                 <h3 className="text-base font-bold text-base-content">Connect Wallet</h3>
-                <p className="text-xs text-base-content/50">
+                <p className="text-xs text-base-content/60">
                   Connect your wallet to review your verified completions and earned rewards.
                 </p>
                 <button onClick={connectWallet} className="btn btn-neutral btn-sm font-semibold">
@@ -458,11 +467,11 @@ const WorkerTasks = () => {
           ) : completedTasks.length === 0 ? (
             <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
               <div className="max-w-md mx-auto space-y-3">
-                <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/40">
+                <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/60">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <h3 className="text-base font-bold text-base-content">No verified completions yet</h3>
-                <p className="text-xs text-base-content/50">
+                <p className="text-xs text-base-content/60">
                   Complete your first subtask and get verified by AI to build your reputation score.
                 </p>
               </div>
@@ -489,7 +498,7 @@ const WorkerTasks = () => {
                       {st.task?.objective || subtaskHeadline(st)}
                     </p>
 
-                    <div className="flex justify-between items-center pt-2 border-t border-base-300/60 text-xs text-base-content/50 group-hover:text-base-content font-medium">
+                    <div className="flex justify-between items-center pt-2 border-t border-base-300/60 text-xs text-base-content/60 group-hover:text-base-content font-medium">
                       <span>View Proof & Payout</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </div>

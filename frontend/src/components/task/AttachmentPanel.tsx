@@ -55,8 +55,12 @@ export function AttachmentPanel({ cid }: { cid: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 p-3 text-xs text-base-content/40">
-        <span className="loading loading-spinner loading-xs" />
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex items-center gap-2 p-3 text-xs text-base-content/60"
+      >
+        <span aria-hidden="true" className="loading loading-spinner loading-xs" />
         Loading attachment…
       </div>
     );
@@ -68,16 +72,16 @@ export function AttachmentPanel({ cid }: { cid: string }) {
     <div className="rounded-lg border border-base-300/60 bg-base-200/40 overflow-hidden">
       <div className="flex items-center gap-2.5 p-3">
         {attachment?.isArchive ? (
-          <FolderArchive className="w-4 h-4 text-primary shrink-0" />
+          <FolderArchive aria-hidden="true" className="w-4 h-4 text-primary shrink-0" />
         ) : (
-          <FileText className="w-4 h-4 text-primary shrink-0" />
+          <FileText aria-hidden="true" className="w-4 h-4 text-primary shrink-0" />
         )}
 
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold text-base-content truncate">
             {attachment?.filename || "Attached dataset"}
           </p>
-          <p className="text-[11px] text-base-content/50 font-mono truncate">
+          <p className="text-[11px] text-base-content/60 font-mono truncate">
             {attachment ? formatBytes(attachment.size) : "size unknown"}
             {files.length > 0 ? ` · ${files.length} files` : ""}
             {attachment?.uncompressedSize
@@ -90,16 +94,17 @@ export function AttachmentPanel({ cid }: { cid: string }) {
         <a
           href={`${API_URL}/api/ipfs/file/${cid}`}
           className="btn btn-neutral btn-xs gap-1 shrink-0"
+          aria-label={`Download ${attachment?.filename || "attached dataset"}`}
           download
         >
-          <Download className="w-3 h-3" />
+          <Download aria-hidden="true" className="w-3 h-3" />
           Download
         </a>
       </div>
 
       {attachment?.ephemeral && (
         <div className="flex items-start gap-1.5 px-3 pb-2 text-[11px] text-warning">
-          <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+          <AlertTriangle aria-hidden="true" className="w-3 h-3 shrink-0 mt-0.5" />
           <span>
             This file is held in backend memory only and will be lost when the backend restarts.
           </span>
@@ -111,21 +116,29 @@ export function AttachmentPanel({ cid }: { cid: string }) {
           <button
             type="button"
             onClick={() => setShowFiles((v) => !v)}
-            className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-base-content/40 hover:text-base-content/70 transition-colors"
+            aria-expanded={showFiles}
+            aria-controls={`archive-${cid}`}
+            className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-base-content/60 hover:text-base-content/70 transition-colors"
           >
-            <ChevronDown className={`w-3 h-3 transition-transform ${showFiles ? "rotate-180" : ""}`} />
-            Browse contents
+            <ChevronDown
+              aria-hidden="true"
+              className={`w-3 h-3 transition-transform motion-reduce:transition-none ${showFiles ? "rotate-180" : ""}`}
+            />
+            Browse contents ({files.length})
           </button>
 
           {showFiles && (
-            <div className="max-h-56 overflow-y-auto divide-y divide-base-300/40 border-t border-base-300/40">
+            <ul
+              id={`archive-${cid}`}
+              className="max-h-56 overflow-y-auto divide-y divide-base-300/40 border-t border-base-300/40"
+            >
               {files.map((entry) => (
-                <div key={entry.path} className="flex items-center gap-2 px-3 py-1.5">
-                  <FileText className="w-3 h-3 text-base-content/30 shrink-0" />
+                <li key={entry.path} className="flex items-center gap-2 px-3 py-1.5">
+                  <FileText aria-hidden="true" className="w-3 h-3 text-base-content/60 shrink-0" />
                   <span className="text-[11px] text-base-content/70 truncate flex-1 font-mono">
                     {entry.path}
                   </span>
-                  <span className="text-[10px] font-mono text-base-content/35 shrink-0">
+                  <span className="text-[10px] font-mono text-base-content/60 shrink-0">
                     {formatBytes(entry.size)}
                   </span>
                   {/* Pull a single file out of the archive rather than the whole bundle. */}
@@ -135,16 +148,16 @@ export function AttachmentPanel({ cid }: { cid: string }) {
                     download
                     aria-label={`Download ${entry.path}`}
                   >
-                    <Download className="w-3 h-3" />
+                    <Download aria-hidden="true" className="w-3 h-3" />
                   </a>
-                </div>
+                </li>
               ))}
               {attachment?.truncated && (
-                <p className="px-3 py-2 text-[11px] italic text-base-content/40">
+                <li className="px-3 py-2 text-[11px] italic text-base-content/60">
                   Listing truncated — download the archive to see every file.
-                </p>
+                </li>
               )}
-            </div>
+            </ul>
           )}
         </div>
       )}
@@ -159,7 +172,7 @@ export function TaskAttachments({ description }: { description?: string | null }
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-bold uppercase tracking-wider text-base-content/40">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-base-content/60">
         Attached datasets
       </p>
       {cids.map((cid) => (

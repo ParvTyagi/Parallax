@@ -49,7 +49,7 @@ export function AcceptanceCriteria({ subtask }: { subtask: SubtaskLike }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-base-content/50">
+      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-base-content/60">
         <span className="flex items-center gap-1.5">
           <Target className="w-3.5 h-3.5" />
           Acceptance criteria
@@ -75,14 +75,14 @@ export function AcceptanceCriteria({ subtask }: { subtask: SubtaskLike }) {
                 <XCircle className="w-3.5 h-3.5 text-error shrink-0 mt-0.5" />
               )
             ) : (
-              <Circle className="w-3.5 h-3.5 text-base-content/30 shrink-0 mt-0.5" />
+              <Circle className="w-3.5 h-3.5 text-base-content/60 shrink-0 mt-0.5" />
             )}
             <div>
               <span className={graded && !row.met ? "text-base-content/80" : "text-base-content/70"}>
                 {row.criterion}
               </span>
               {graded && row.note && (
-                <span className="block text-[11px] text-base-content/45 italic mt-0.5">{row.note}</span>
+                <span className="block text-[11px] text-base-content/60 italic mt-0.5">{row.note}</span>
               )}
             </div>
           </li>
@@ -90,7 +90,7 @@ export function AcceptanceCriteria({ subtask }: { subtask: SubtaskLike }) {
       </ul>
 
       {!graded && (
-        <p className="text-[11px] text-base-content/40 italic">
+        <p className="text-[11px] text-base-content/60 italic">
           The AI verifier grades each of these independently. All must be met to release payment.
         </p>
       )}
@@ -113,7 +113,7 @@ export function SubtaskSpec({ subtask, showRawBrief = true }: { subtask: Subtask
 
       {subtask.contextNotes && (
         <div className="text-xs text-base-content/60 leading-relaxed">
-          <span className="font-bold uppercase tracking-wider text-[11px] text-base-content/50">Context: </span>
+          <span className="font-bold uppercase tracking-wider text-[11px] text-base-content/60">Context: </span>
           {subtask.contextNotes}
         </div>
       )}
@@ -122,7 +122,7 @@ export function SubtaskSpec({ subtask, showRawBrief = true }: { subtask: Subtask
 
       {subtask.deliverableFormat && (
         <div className="flex items-start gap-1.5 text-xs text-base-content/60">
-          <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5 text-base-content/40" />
+          <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5 text-base-content/60" />
           <span>
             <span className="font-semibold">Deliver as:</span> {subtask.deliverableFormat}
           </span>
@@ -135,14 +135,14 @@ export function SubtaskSpec({ subtask, showRawBrief = true }: { subtask: Subtask
             <span key={s} className="badge badge-outline badge-xs font-mono">{s}</span>
           ))}
           {subtask.estimatedMinutes ? (
-            <span className="text-[11px] text-base-content/40 font-mono">~{subtask.estimatedMinutes} min</span>
+            <span className="text-[11px] text-base-content/60 font-mono">~{subtask.estimatedMinutes} min</span>
           ) : null}
         </div>
       )}
 
       {subtask.aiRationale && (
         <div className="text-xs text-base-content/60 bg-base-200/40 p-2.5 rounded-lg border border-base-300/60 whitespace-pre-wrap leading-relaxed">
-          <span className="font-bold uppercase tracking-wider text-[11px] text-base-content/50 block mb-1">
+          <span className="font-bold uppercase tracking-wider text-[11px] text-base-content/60 block mb-1">
             Verifier rationale
           </span>
           {subtask.aiRationale}
@@ -151,8 +151,11 @@ export function SubtaskSpec({ subtask, showRawBrief = true }: { subtask: Subtask
 
       {showRawBrief && subtask.description && hasStructured && (
         <details className="group">
-          <summary className="cursor-pointer list-none text-[11px] font-bold uppercase tracking-wider text-base-content/40 hover:text-base-content/70 flex items-center gap-1">
-            <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+          <summary className="cursor-pointer list-none text-[11px] font-bold uppercase tracking-wider text-base-content/60 hover:text-base-content/70 flex items-center gap-1">
+            <ChevronDown
+              aria-hidden="true"
+              className="w-3 h-3 transition-transform motion-reduce:transition-none group-open:rotate-180"
+            />
             Full brief
           </summary>
           <pre className="mt-2 text-xs text-base-content/70 font-mono bg-base-200/40 p-3 rounded-lg border border-base-300/60 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">

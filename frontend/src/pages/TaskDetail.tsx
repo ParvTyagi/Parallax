@@ -19,6 +19,7 @@ import {
   Gavel,
 } from "lucide-react";
 import { API_URL } from "../lib/constants";
+import { taskHeadline, MISSING_BRIEF_HINT } from "../lib/utils";
 
 const STATE_BADGE: Record<string, { label: string; cls: string }> = {
   OPEN:            { label: "OPEN", cls: "badge-info" },
@@ -336,7 +337,7 @@ const TaskDetail = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-80 gap-3">
         <span className="loading loading-spinner loading-md text-primary" />
-        <span className="text-xs text-base-content/50 font-medium">Loading execution graph…</span>
+        <span className="text-xs text-base-content/60 font-medium">Loading execution graph…</span>
       </div>
     );
   }
@@ -347,7 +348,7 @@ const TaskDetail = () => {
         <div className="space-y-3">
           <AlertTriangle className="w-8 h-8 text-warning mx-auto" />
           <h3 className="text-base font-bold text-base-content">Task Not Found</h3>
-          <p className="text-xs text-base-content/50">
+          <p className="text-xs text-base-content/60">
             The requested task ID could not be retrieved from the network.
           </p>
           <Link to="/app" className="btn btn-neutral btn-sm">
@@ -393,13 +394,30 @@ const TaskDetail = () => {
                 </span>
               </div>
 
-              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-base-content leading-snug">
-                {task.objective || task.description}
-              </h1>
+              {(() => {
+                const headline = taskHeadline(task);
+                return (
+                  <h1
+                    className={`text-xl md:text-2xl tracking-tight leading-snug ${
+                      headline.isPlaceholder
+                        ? "italic font-normal text-base-content/60"
+                        : "font-bold text-base-content"
+                    }`}
+                  >
+                    {headline.text}
+                  </h1>
+                );
+              })()}
+
+              {/* The page still works without the brief — say so plainly rather
+                  than leaving the header looking broken. */}
+              {taskHeadline(task).isPlaceholder && (
+                <p className="text-xs text-base-content/60 max-w-prose">{MISSING_BRIEF_HINT}</p>
+              )}
 
               {task.successCriteria?.length > 0 && (
                 <div className="pt-1">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-base-content/40 mb-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-base-content/60 mb-1">
                     Definition of done
                   </p>
                   <ul className="list-disc list-inside text-xs text-base-content/60 space-y-0.5">
@@ -415,7 +433,7 @@ const TaskDetail = () => {
               </div>
 
               {(task.creator || task.customerAddress) && (
-                <div className="flex items-center gap-2 text-xs text-base-content/50 font-mono pt-1">
+                <div className="flex items-center gap-2 text-xs text-base-content/60 font-mono pt-1">
                   <span>Creator:</span>
                   <span className="text-base-content font-medium truncate max-w-xs">
                     {task.creator || task.customerAddress}
@@ -453,18 +471,18 @@ const TaskDetail = () => {
             {/* Quick Metrics */}
             <div className="flex flex-wrap items-center gap-4 shrink-0 bg-base-200/60 border border-base-300/80 rounded-xl p-4">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-base-content/40 block mb-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-base-content/60 block mb-0.5">
                   Total Escrow
                 </span>
                 <span className="text-xl font-mono font-bold text-base-content">
-                  {totalBudget} <span className="text-xs font-sans text-base-content/50">MON</span>
+                  {totalBudget} <span className="text-xs font-sans text-base-content/60">MON</span>
                 </span>
               </div>
 
               <div className="h-8 w-px bg-base-300" />
 
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-base-content/40 block mb-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-base-content/60 block mb-0.5">
                   Status
                 </span>
                 <div className="flex items-center gap-1.5 text-xs font-semibold">
@@ -529,7 +547,7 @@ const TaskDetail = () => {
               <GitBranch className="w-4 h-4" />
               <span>Decomposed Execution Graph</span>
             </h3>
-            <span className="text-xs text-base-content/40 font-mono font-medium">
+            <span className="text-xs text-base-content/60 font-mono font-medium">
               {verifiedCount} / {totalCount} verified
             </span>
           </div>
@@ -564,7 +582,7 @@ const TaskDetail = () => {
                         {index + 1}
                       </div>
                       <div className="space-y-1.5 flex-1">
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-base-content/40 block">
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-base-content/60 block">
                           {st.rangeLabel || `Phase ${index + 1}`}
                         </span>
                         <SubtaskSpec subtask={st} />
@@ -583,7 +601,7 @@ const TaskDetail = () => {
 
                   {/* Worker Attribution (if claimed) */}
                   {workerAddr && (
-                    <div className="flex items-center gap-2 text-xs text-base-content/50 font-mono bg-base-200/40 p-2.5 rounded-lg border border-base-300/60">
+                    <div className="flex items-center gap-2 text-xs text-base-content/60 font-mono bg-base-200/40 p-2.5 rounded-lg border border-base-300/60">
                       <span className="text-[11px] text-base-content/60">Worker:</span>
                       <Link
                         to={`/worker/${workerAddr}`}
@@ -618,7 +636,7 @@ const TaskDetail = () => {
                           {st.submissionContent}
                         </div>
                       ) : (
-                        <p className="text-xs text-base-content/50 italic">
+                        <p className="text-xs text-base-content/60 italic">
                           Deliverable securely recorded on Monad and pinned to IPFS.
                         </p>
                       )}
@@ -645,7 +663,7 @@ const TaskDetail = () => {
                   {/* OPEN State: Claim CTA */}
                   {isOpen && (
                     <div className="pt-2 border-t border-base-300/60 flex items-center justify-between">
-                      <span className="text-xs text-base-content/50">
+                      <span className="text-xs text-base-content/60">
                         Open for any freelancer to claim
                       </span>
                       <button
@@ -675,6 +693,7 @@ const TaskDetail = () => {
                       <textarea
                         rows={4}
                         placeholder="Paste your final deliverable (e.g. analysis report, code, markdown data)..."
+                        aria-label={`Deliverable for subtask ${st.rangeLabel}`}
                         className="textarea textarea-bordered w-full text-xs leading-relaxed"
                         value={submission}
                         onChange={(e) => setSubmission(e.target.value)}
@@ -708,7 +727,7 @@ const TaskDetail = () => {
                   )}
 
                   {isClaimed && !isWorker && (
-                    <div className="pt-2 border-t border-base-300/60 flex items-center justify-between text-xs text-base-content/50">
+                    <div className="pt-2 border-t border-base-300/60 flex items-center justify-between text-xs text-base-content/60">
                       <span>Currently in progress by claimant worker.</span>
                       <span className="badge badge-warning badge-xs font-mono">CLAIMED</span>
                     </div>
@@ -845,7 +864,7 @@ const TaskDetail = () => {
                     >
                       <div>
                         <span className="text-[11px] font-bold text-success block">Payout Tx</span>
-                        <span className="text-[10px] text-base-content/40 uppercase">
+                        <span className="text-[10px] text-base-content/60 uppercase">
                           {st.rangeLabel}
                         </span>
                       </div>
@@ -875,7 +894,7 @@ const TaskDetail = () => {
               <p>
                 Submissions are pinned to IPFS and evaluated by the Gemini AI Orchestrator against the original master task parameters.
               </p>
-              <p className="text-[11px] text-base-content/50">
+              <p className="text-[11px] text-base-content/60">
                 A passing score (≥ 70/100) starts a 48-hour dispute window. The creator can challenge the result during that window; otherwise, funds and the worker's bond release automatically once it closes.
               </p>
             </div>

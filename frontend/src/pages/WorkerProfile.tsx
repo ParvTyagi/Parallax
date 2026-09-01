@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useWeb3 } from "../contexts/Web3Context";
 import { API_URL } from "../lib/constants";
+import { subtaskHeadline } from "../components/task/SubtaskSpec";
 import {
   ExternalLink,
   Copy,
@@ -62,7 +63,7 @@ const WorkerProfile = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-80 gap-3">
         <span className="loading loading-spinner loading-md text-primary" />
-        <span className="text-xs text-base-content/50 font-medium">Loading worker profile…</span>
+        <span className="text-xs text-base-content/60 font-medium">Loading worker profile…</span>
       </div>
     );
   }
@@ -71,9 +72,9 @@ const WorkerProfile = () => {
     return (
       <div className="card bg-base-100 border border-base-300/80 p-12 text-center max-w-md mx-auto mt-12">
         <div className="space-y-3">
-          <User className="w-8 h-8 text-base-content/40 mx-auto" />
+          <User className="w-8 h-8 text-base-content/60 mx-auto" />
           <h3 className="text-base font-bold text-base-content">Worker Profile Not Found</h3>
-          <p className="text-xs text-base-content/50 font-mono">
+          <p className="text-xs text-base-content/60 font-mono">
             {address}
           </p>
           <Link to="/worker" className="btn btn-neutral btn-sm">
@@ -124,7 +125,7 @@ const WorkerProfile = () => {
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-xs text-base-content/50">
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-xs text-base-content/60">
                   <button
                     onClick={copyAddress}
                     className="flex items-center gap-1 hover:text-base-content transition-colors font-mono cursor-pointer"
@@ -158,61 +159,61 @@ const WorkerProfile = () => {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-4 md:p-5">
-            <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
+            <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
               Reputation
             </span>
             <div className="text-2xl font-bold font-mono text-base-content">
               {profile.reputationScore}
             </div>
-            <span className="text-[11px] text-base-content/40">Tier metric</span>
+            <span className="text-[11px] text-base-content/60">Tier metric</span>
           </div>
         </div>
 
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-4 md:p-5">
-            <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
+            <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
               Completed
             </span>
             <div className="text-2xl font-bold font-mono text-success">
               {profile.successfulTasks ?? 0}
             </div>
-            <span className="text-[11px] text-base-content/40">Verified work</span>
+            <span className="text-[11px] text-base-content/60">Verified work</span>
           </div>
         </div>
 
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-4 md:p-5">
-            <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
+            <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
               Slashed / Failed
             </span>
             <div className="text-2xl font-bold font-mono text-error">
               {profile.failedTasks ?? 0}
             </div>
-            <span className="text-[11px] text-base-content/40">Forfeits & rejections</span>
+            <span className="text-[11px] text-base-content/60">Forfeits & rejections</span>
           </div>
         </div>
 
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-4 md:p-5">
-            <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
+            <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
               Success Rate
             </span>
             <div className="text-2xl font-bold font-mono text-base-content">
               {successRate}%
             </div>
-            <span className="text-[11px] text-base-content/40">Pass percentage</span>
+            <span className="text-[11px] text-base-content/60">Pass percentage</span>
           </div>
         </div>
 
         <div className="card bg-base-100 border border-base-300/80 shadow-xs col-span-2 lg:col-span-1">
           <div className="card-body p-4 md:p-5">
-            <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block mb-1">
+            <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
               Bonded (MON)
             </span>
             <div className="text-2xl font-bold font-mono text-base-content">
               {Number(profile.activeBondTotal || 0).toFixed(2)}
             </div>
-            <span className="text-[11px] text-base-content/40">Locked against open claims</span>
+            <span className="text-[11px] text-base-content/60">Locked against open claims</span>
           </div>
         </div>
       </div>
@@ -223,7 +224,7 @@ const WorkerProfile = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-bold text-base-content">Task History & Deliverables</h2>
-              <p className="text-xs text-base-content/50 mt-0.5">
+              <p className="text-xs text-base-content/60 mt-0.5">
                 All claimed microtasks, verification statuses, and on-chain payouts.
               </p>
             </div>
@@ -249,13 +250,13 @@ const WorkerProfile = () => {
 
           {filteredHistory.length === 0 ? (
             <div className="p-8 text-center bg-base-200/40 rounded-xl border border-base-300/60">
-              <p className="text-xs text-base-content/50">No task activity found for this filter.</p>
+              <p className="text-xs text-base-content/60">No task activity found for this filter.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="table table-sm w-full">
                 <thead>
-                  <tr className="border-b border-base-300 text-base-content/50 text-[11px] uppercase tracking-wider">
+                  <tr className="border-b border-base-300 text-base-content/60 text-[11px] uppercase tracking-wider">
                     <th className="font-semibold py-3">Task ID</th>
                     <th className="font-semibold py-3">Subtask Description</th>
                     <th className="font-semibold py-3">Reward</th>
@@ -273,9 +274,9 @@ const WorkerProfile = () => {
                         </td>
                         <td className="max-w-md py-3.5">
                           <p className="font-semibold text-base-content truncate">
-                            {st.description}
+                            {subtaskHeadline(st)}
                           </p>
-                          <span className="text-[10px] font-mono text-base-content/40 uppercase">
+                          <span className="text-[10px] font-mono text-base-content/60 uppercase">
                             {st.rangeLabel}
                           </span>
                         </td>
