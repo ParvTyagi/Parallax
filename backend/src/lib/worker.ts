@@ -1,32 +1,10 @@
 import { fetchFromIPFS } from "./ipfs";
-
-// ... [existing imports]
 import { prisma } from "../db/client";
-import { geminiModel } from "./gemini";
-import { ethers } from "ethers";
+import { generateWithGemini } from "./gemini";
+import { sendOrchestratorTx } from "./orchestrator";
 import dotenv from "dotenv";
 
 dotenv.config();
-
-const TASK_MANAGER_ABI = [
-  "function verifySubtask(bytes32 taskId, bytes32 subtaskId, bool passed, uint8 score) external",
-  "function releasePayout(bytes32 taskId, bytes32 subtaskId) external"
-];
-
-function getOrchestratorContract() {
-  const rpcUrl = process.env.MONAD_RPC_URL;
-  const pk = process.env.ORCHESTRATOR_PRIVATE_KEY;
-  const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
-
-  if (!rpcUrl || !pk || !taskManagerAddress) {
-    throw new Error("Missing orchestrator credentials");
-  }
-
-  const formattedPk = pk.startsWith('0x') ? pk : `0x${pk}`;
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const wallet = new ethers.Wallet(formattedPk, provider);
-  return new ethers.Contract(taskManagerAddress, TASK_MANAGER_ABI, wallet);
-}
 
 export async function startJobWorker() {
   console.log("Starting durable DB job worker...");
@@ -34,19 +12,27 @@ export async function startJobWorker() {
 
   setInterval(async () => {
     try {
-      // Find a pending job
-      const job = await prisma.job.findFirst({
-        where: { status: "PENDING" },
-        orderBy: { createdAt: "asc" }
-      });
+      // Claims one job atomically. SKIP LOCKED guarantees two workers never
+      // take the same row, which would double-send its on-chain transaction.
+      // `updatedAt` is set here because @updatedAt is applied by Prisma Client,
+      // not the database, and this bypasses it.
+      const claimed = await prisma.$queryRaw<
+        Array<{ id: string; type: string; payload: any; attempts: number }>
+      >`
+        UPDATE "Job"
+        SET status = 'PROCESSING', attempts = attempts + 1, "updatedAt" = NOW()
+        WHERE id = (
+          SELECT id FROM "Job"
+          WHERE status = 'PENDING'
+          ORDER BY "createdAt" ASC
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, type, payload, attempts
+      `;
 
+      const job = claimed[0];
       if (!job) return;
-
-      // Mark as processing
-      await prisma.job.update({
-        where: { id: job.id },
-        data: { status: "PROCESSING", attempts: job.attempts + 1 }
-      });
 
       console.log(`[Worker] Processing Job ${job.id} of type ${job.type}`);
 
@@ -57,7 +43,6 @@ export async function startJobWorker() {
           await handleAggregate(job.payload as any);
         }
 
-        // Mark completed
         await prisma.job.update({
           where: { id: job.id },
           data: { status: "COMPLETED" }
@@ -67,9 +52,11 @@ export async function startJobWorker() {
         console.error(`[Worker] Job ${job.id} failed:`, err.message);
         await prisma.job.update({
           where: { id: job.id },
-          data: { 
-            status: job.attempts >= 3 ? "FAILED" : "PENDING", 
-            error: err.message || "Unknown error" 
+          data: {
+            // `attempts` is already incremented by the claim, so this retires a
+            // job after 3 total attempts.
+            status: job.attempts >= 3 ? "FAILED" : "PENDING",
+            error: err.message || "Unknown error"
           }
         });
       }
@@ -81,7 +68,7 @@ export async function startJobWorker() {
 
 async function handleVerify(payload: { subtaskId: string }) {
   const { subtaskId } = payload;
-  
+
   const subtask = await prisma.subtask.findUnique({
     where: { subtaskId },
     include: { submissions: { orderBy: { createdAt: 'desc' }, take: 1 }, task: true }
@@ -91,49 +78,132 @@ async function handleVerify(payload: { subtaskId: string }) {
     throw new Error("Subtask or submission not found");
   }
 
-  // IPFS Fetching!
   const workerSubmissionCID = subtask.submissions[0].storagePath;
   const workerSubmissionText = await fetchFromIPFS(workerSubmissionCID);
-  
+
   const subtaskRequirementText = await fetchFromIPFS(subtask.description);
 
+  // Grading against the stored criteria keeps the verdict auditable and lets a
+  // worker see exactly which bar they missed.
+  const criteria = subtask.acceptanceCriteria || [];
+  const { passed, score, reasons, criteriaResults } = await runVerification({
+    label: subtask.rangeLabel,
+    objective: subtask.objective || "",
+    requirement: subtaskRequirementText,
+    deliverableFormat: subtask.deliverableFormat || "",
+    criteria,
+    submission: workerSubmissionText
+  });
+
+  await prisma.subtask.update({
+    where: { subtaskId },
+    data: {
+      aiRationale: reasons.join("\n"),
+      criteriaResults: criteriaResults as any,
+      aiFlags: criteriaResults.filter((c) => !c.met).map((c) => c.criterion)
+    }
+  });
+
+  await sendOrchestratorTx(`verifySubtask ${subtaskId.slice(0, 10)}`, (contract, overrides) =>
+    contract.verifySubtask(subtask.taskId, subtaskId, passed, score, overrides)
+  );
+}
+
+export interface CriterionResult {
+  criterion: string;
+  met: boolean;
+  note: string;
+}
+
+export interface VerificationResult {
+  passed: boolean;
+  score: number;
+  reasons: string[];
+  criteriaResults: CriterionResult[];
+}
+
+/// Runs the criterion-by-criterion QA pass. Shared by the durable job worker and
+/// the /api/verify preview endpoint so both grade identically.
+export async function runVerification(input: {
+  label?: string;
+  objective?: string;
+  requirement: string;
+  deliverableFormat?: string;
+  criteria: string[];
+  submission: string;
+}): Promise<VerificationResult> {
+  const criteriaBlock = input.criteria.length
+    ? input.criteria.map((c, i) => `${i + 1}. ${c}`).join("\n")
+    : "(No explicit criteria were recorded. Judge against the requirement text alone.)";
+
   const prompt = `
-You are a strict QA verifier.
-Task requirements: "${subtaskRequirementText}"
-Worker submission: "${workerSubmissionText}"
+You are a strict QA verifier on the Parallax compute network. Real money is released
+on your verdict, so be exacting but fair. Judge only what is present in the submission.
 
-Evaluate the submission. Did the worker provide the requested information?
-Score the work from 0 to 100.
-If the score is >= 70, passed is true.
+SUBTASK: ${input.label || "Subtask"}
+OBJECTIVE: ${input.objective || "(see requirement)"}
+FULL REQUIREMENT:
+<requirement>
+${input.requirement}
+</requirement>
 
-Return ONLY valid JSON:
+REQUIRED DELIVERABLE FORMAT: ${input.deliverableFormat || "(unspecified)"}
+
+ACCEPTANCE CRITERIA (grade each one independently):
+${criteriaBlock}
+
+WORKER SUBMISSION:
+<submission>
+${input.submission}
+</submission>
+
+For EVERY acceptance criterion, decide whether the submission meets it and give a
+one-sentence note quoting or pointing to the specific evidence. Do not mark a
+criterion met on the assumption that content exists elsewhere.
+
+Then score 0-100 overall, weighted by how many criteria are met and how well.
+"passed" is true only if the score is >= 70 AND no criterion is unmet.
+
+Return ONLY valid JSON, no markdown fences:
 {
-  "passed": boolean,
+  "criteriaResults": [{ "criterion": "string", "met": boolean, "note": "string" }],
   "score": number,
+  "passed": boolean,
   "reasons": ["string"]
 }
 `;
 
-  const aiResult = await geminiModel.generateContent(prompt);
-  const text = aiResult.response.text().trim().replace(/```json/g, "").replace(/```/g, "");
-  
-  let parsedJson;
   try {
-    parsedJson = JSON.parse(text);
-  } catch (e) {
-    throw new Error("AI returned invalid JSON");
-  }
-  
-  const passed = parsedJson.passed === true;
-  const score = parsedJson.score || 0;
+    // Retries across models: this verdict releases escrowed funds, so a single
+    // overloaded model must not decide it.
+    const raw = await generateWithGemini(prompt);
+    const text = raw.trim().replace(/```json/gi, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(text);
 
-  const contract = getOrchestratorContract();
+    const criteriaResults: CriterionResult[] = Array.isArray(parsed.criteriaResults)
+      ? parsed.criteriaResults.map((c: any) => ({
+          criterion: String(c?.criterion || ""),
+          met: c?.met === true,
+          note: String(c?.note || "")
+        }))
+      : [];
 
-  const tx = await contract.verifySubtask(subtask.taskId, subtaskId, passed, score);
-  const receipt = await tx.wait();
-
-  if (!receipt || receipt.status !== 1) {
-    throw new Error("Transaction reverted on-chain");
+    const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0)));
+    const allMet = criteriaResults.length === 0 || criteriaResults.every((c) => c.met);
+    return {
+      // Trust the criteria over the model's own boolean — it frequently passes work
+      // it has just marked as failing a criterion.
+      passed: parsed.passed === true && score >= 70 && allMet,
+      score,
+      reasons: Array.isArray(parsed.reasons) ? parsed.reasons.map((r: any) => String(r)) : [],
+      criteriaResults
+    };
+  } catch (err: any) {
+    // Never approve work the AI could not actually grade: this verdict releases
+    // escrowed MON. Throwing leaves the job to retry and the subtask SUBMITTED
+    // with no transaction sent — stuck and visible beats wrongly paid.
+    console.error("[Verify] Verification could not be completed:", err?.message || err);
+    throw new Error(`AI verification unavailable: ${err?.message || err}`);
   }
 }
 
@@ -149,11 +219,13 @@ function startPayoutSweeper() {
 
       if (releasable.length === 0) return;
 
-      const contract = getOrchestratorContract();
       for (const subtask of releasable) {
         try {
-          const tx = await contract.releasePayout(subtask.taskId, subtask.subtaskId);
-          await tx.wait();
+          await sendOrchestratorTx(
+            `releasePayout ${subtask.subtaskId.slice(0, 10)}`,
+            (contract, overrides) =>
+              contract.releasePayout(subtask.taskId, subtask.subtaskId, overrides)
+          );
           console.log(`[PayoutSweeper] Released payout for subtask ${subtask.subtaskId}`);
         } catch (err: any) {
           console.error(`[PayoutSweeper] Failed to release ${subtask.subtaskId}:`, err.message);
@@ -194,8 +266,7 @@ ${allWork}
 
 Synthesize these submissions into a single cohesive, well-formatted final solution for the master task. Return ONLY the final output markdown text.`;
 
-  const aiResult = await geminiModel.generateContent(prompt);
-  const finalSolution = aiResult.response.text().trim();
+  const finalSolution = (await generateWithGemini(prompt)).trim();
   
   await prisma.task.update({
     where: { taskId },

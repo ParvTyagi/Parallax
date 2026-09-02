@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useWeb3 } from "../../contexts/Web3Context";
 import { API_URL } from "../../lib/constants";
+import { taskHeadline, taskHeadlineText, MISSING_BRIEF_HINT } from "../../lib/utils";
 import { ArrowUpRight, Plus, Search } from "lucide-react";
 
 type SubtaskState = "CREATED" | "CLAIMED" | "SUBMITTED" | "PENDING_RELEASE" | "IN_DISPUTE" | "VERIFIED" | "REJECTED";
@@ -13,7 +14,9 @@ interface SubtaskRow {
 
 interface TaskRow {
   taskId: string;
+  /// Resolved from the on-chain CID by the API; empty when that lookup fails.
   description: string;
+  objective?: string | null;
   budget: string;
   createdAt: string;
   subtasks: SubtaskRow[];
@@ -58,7 +61,7 @@ export default function CreatorDashboard() {
   }, [account]);
 
   const filtered = useMemo(
-    () => tasks.filter((t) => t.description.toLowerCase().includes(query.toLowerCase())),
+    () => tasks.filter((t) => taskHeadlineText(t).toLowerCase().includes(query.toLowerCase())),
     [tasks, query]
   );
 
@@ -121,12 +124,15 @@ export default function CreatorDashboard() {
 
         <div className="mb-4 flex items-center">
           <div className="relative w-full max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
             <input
+              id="creator-task-filter"
+              type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter tasks…"
-              className="w-full rounded-md border border-zinc-200 py-1.5 pl-8 pr-3 text-xs placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+              aria-label="Filter tasks by description"
+              className="w-full rounded-md border border-zinc-200 py-1.5 pl-8 pr-3 text-xs placeholder:text-zinc-500 focus:border-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-1"
             />
           </div>
         </div>
@@ -167,9 +173,17 @@ export default function CreatorDashboard() {
                   const status = deriveTaskStatus(task.subtasks);
                   const verified = task.subtasks.filter((s) => s.state === "VERIFIED").length;
                   const total = task.subtasks.length;
+                  const headline = taskHeadline(task);
                   return (
                     <tr key={task.taskId} className="group hover:bg-zinc-50">
-                      <td className="max-w-xs truncate px-4 py-3 font-medium">{task.description}</td>
+                      <td
+                        className={`max-w-xs truncate px-4 py-3 ${
+                          headline.isPlaceholder ? "italic font-normal text-zinc-500" : "font-medium"
+                        }`}
+                        title={headline.isPlaceholder ? MISSING_BRIEF_HINT : undefined}
+                      >
+                        {headline.text}
+                      </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5 text-xs text-zinc-600">
                           <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
@@ -193,7 +207,7 @@ export default function CreatorDashboard() {
                       </td>
                       <td className="px-4 py-3">
                         <Link to={`/workspace/${task.taskId}`}>
-                          <ArrowUpRight className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900" />
+                          <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5 text-zinc-500 group-hover:text-zinc-900" />
                         </Link>
                       </td>
                     </tr>

@@ -30,11 +30,11 @@ export default function Sidebar() {
       </div>
 
       {/* Nav List */}
-      <div className="flex-1 overflow-y-auto py-5 px-3 space-y-6">
+      <nav aria-label="Main" className="flex-1 overflow-y-auto py-5 px-3 space-y-6">
         {/* Client Space */}
         <div>
           <div className="px-3 mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-bold tracking-wider text-base-content/40 uppercase">
+            <span className="text-[11px] font-bold tracking-wider text-base-content/60 uppercase">
               Client
             </span>
           </div>
@@ -42,13 +42,14 @@ export default function Sidebar() {
             <li>
               <Link
                 to="/app"
+                aria-current={isActive("/app") ? "page" : undefined}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
                   isActive("/app")
                     ? "bg-neutral text-neutral-content font-semibold shadow-xs"
                     : "text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium"
                 }`}
               >
-                <PlusCircle className="w-4 h-4 shrink-0" />
+                <PlusCircle aria-hidden="true" className="w-4 h-4 shrink-0" />
                 <span>Post a Project</span>
               </Link>
             </li>
@@ -58,7 +59,7 @@ export default function Sidebar() {
         {/* Freelancer Space */}
         <div>
           <div className="px-3 mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-bold tracking-wider text-base-content/40 uppercase">
+            <span className="text-[11px] font-bold tracking-wider text-base-content/60 uppercase">
               Freelancer
             </span>
           </div>
@@ -66,13 +67,16 @@ export default function Sidebar() {
             <li>
               <Link
                 to="/worker"
+                aria-current={
+                  isActive("/worker") && !location.pathname.startsWith("/worker/0x") ? "page" : undefined
+                }
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
                   isActive("/worker") && !location.pathname.startsWith("/worker/0x")
                     ? "bg-neutral text-neutral-content font-semibold shadow-xs"
                     : "text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium"
                 }`}
               >
-                <Compass className="w-4 h-4 shrink-0" />
+                <Compass aria-hidden="true" className="w-4 h-4 shrink-0" />
                 <span>Marketplace</span>
               </Link>
             </li>
@@ -80,13 +84,14 @@ export default function Sidebar() {
               <li>
                 <Link
                   to={`/worker/${account}`}
+                  aria-current={location.pathname === `/worker/${account}` ? "page" : undefined}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
                     location.pathname === `/worker/${account}`
                       ? "bg-neutral text-neutral-content font-semibold shadow-xs"
                       : "text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium"
                   }`}
                 >
-                  <UserCircle className="w-4 h-4 shrink-0" />
+                  <UserCircle aria-hidden="true" className="w-4 h-4 shrink-0" />
                   <span>My Profile & Stakes</span>
                 </Link>
               </li>
@@ -106,13 +111,14 @@ export default function Sidebar() {
               <li>
                 <Link
                   to="/admin"
+                  aria-current={isActive("/admin") ? "page" : undefined}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
                     isActive("/admin")
                       ? "bg-neutral text-neutral-content font-semibold shadow-xs"
                       : "text-base-content/70 hover:text-base-content hover:bg-base-200 font-medium"
                   }`}
                 >
-                  <ShieldCheck className="w-4 h-4 text-warning shrink-0" />
+                  <ShieldCheck aria-hidden="true" className="w-4 h-4 text-warning shrink-0" />
                   <span>Treasury & Fees</span>
                 </Link>
               </li>
@@ -123,7 +129,7 @@ export default function Sidebar() {
         {/* Protocol Resources */}
         <div>
           <div className="px-3 mb-2">
-            <span className="text-[11px] font-bold tracking-wider text-base-content/40 uppercase">
+            <span className="text-[11px] font-bold tracking-wider text-base-content/60 uppercase">
               Resources
             </span>
           </div>
@@ -155,7 +161,7 @@ export default function Sidebar() {
             </li>
           </ul>
         </div>
-      </div>
+      </nav>
 
       {/* Network Status Footer Card */}
       <div className="p-3 border-t border-base-300 bg-base-100 shrink-0">
@@ -163,7 +169,10 @@ export default function Sidebar() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                <span
+                  aria-hidden="true"
+                  className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-success opacity-75"
+                />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
               </span>
               <span className="text-xs font-semibold text-base-content">Monad Testnet</span>

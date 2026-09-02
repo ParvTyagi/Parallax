@@ -189,11 +189,14 @@ export default function LandingPage() {
           {/* Live Status Pill */}
           <div className="inline-flex items-center gap-2 bg-base-200/90 border border-base-300/80 px-3.5 py-1.5 rounded-full text-xs font-semibold text-base-content/80 shadow-2xs">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+              <span
+                  aria-hidden="true"
+                  className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-success opacity-75"
+                />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
             </span>
             <span>Live on Monad Testnet</span>
-            <span className="text-base-content/30">•</span>
+            <span className="text-base-content/60">•</span>
             <span className="text-accent font-mono text-[11px]">AI Orchestration Protocol</span>
           </div>
 
@@ -246,7 +249,7 @@ export default function LandingPage() {
               <div className="w-3 h-3 rounded-full bg-error/60" />
               <div className="w-3 h-3 rounded-full bg-warning/60" />
               <div className="w-3 h-3 rounded-full bg-success/60" />
-              <span className="text-xs font-mono text-base-content/50 ml-2">
+              <span className="text-xs font-mono text-base-content/60 ml-2">
                 parallax-orchestrator // live sandbox
               </span>
             </div>
@@ -310,7 +313,7 @@ export default function LandingPage() {
                     className="p-4 rounded-xl bg-base-100/60 border border-base-300/80 hover:border-base-content/30 transition-all space-y-3"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-bold text-base-content/40 uppercase">
+                      <span className="text-[10px] font-mono font-bold text-base-content/60 uppercase">
                         Phase 0{index + 1}
                       </span>
                       <span className="badge badge-success badge-xs font-mono font-bold">
@@ -349,19 +352,19 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
           <div>
             <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">Autonomous</div>
-            <div className="text-xs text-base-content/50 font-medium mt-1">AI Task Decomposition</div>
+            <div className="text-xs text-base-content/60 font-medium mt-1">AI Task Decomposition</div>
           </div>
           <div>
             <div className="text-2xl md:text-3xl font-bold font-mono text-success">95%</div>
-            <div className="text-xs text-base-content/50 font-medium mt-1">Direct Worker Earnings</div>
+            <div className="text-xs text-base-content/60 font-medium mt-1">Direct Worker Earnings</div>
           </div>
           <div>
             <div className="text-2xl md:text-3xl font-bold font-mono text-accent">Gemini 3.7</div>
-            <div className="text-xs text-base-content/50 font-medium mt-1">Automated Quality Scoring</div>
+            <div className="text-xs text-base-content/60 font-medium mt-1">Automated Quality Scoring</div>
           </div>
           <div>
             <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">48h</div>
-            <div className="text-xs text-base-content/50 font-medium mt-1">Dispute-Protected Escrow</div>
+            <div className="text-xs text-base-content/60 font-medium mt-1">Dispute-Protected Escrow</div>
           </div>
         </div>
       </section>
@@ -431,7 +434,7 @@ export default function LandingPage() {
           <div className="overflow-x-auto">
             <table className="table table-md w-full bg-base-200/60 rounded-2xl border border-base-300 shadow-sm">
               <thead>
-                <tr className="border-b border-base-300 text-base-content/50 text-[11px] uppercase tracking-wider">
+                <tr className="border-b border-base-300 text-base-content/60 text-[11px] uppercase tracking-wider">
                   <th className="py-4">Feature</th>
                   <th className="py-4 text-base-content font-bold">Parallax Network</th>
                   <th className="py-4">Legacy Platforms (Upwork, Fiverr)</th>
@@ -441,27 +444,27 @@ export default function LandingPage() {
                 <tr>
                   <td className="font-bold text-base-content py-4">Platform Take Rate</td>
                   <td className="py-4 font-mono font-bold text-success">5.0% flat fee</td>
-                  <td className="py-4 text-base-content/50">20.0% – 30.0% fee</td>
+                  <td className="py-4 text-base-content/60">20.0% – 30.0% fee</td>
                 </tr>
                 <tr>
                   <td className="font-bold text-base-content py-4">Payout Settlement Speed</td>
                   <td className="py-4 font-mono font-bold text-success">48h dispute window on verification</td>
-                  <td className="py-4 text-base-content/50">14-day mandatory hold</td>
+                  <td className="py-4 text-base-content/60">14-day mandatory hold</td>
                 </tr>
                 <tr>
                   <td className="font-bold text-base-content py-4">Task Decomposition</td>
                   <td className="py-4 font-mono font-bold text-success">Autonomous Gemini 3.7 AI</td>
-                  <td className="py-4 text-base-content/50">Manual manual scoping</td>
+                  <td className="py-4 text-base-content/60">Manual manual scoping</td>
                 </tr>
                 <tr>
                   <td className="font-bold text-base-content py-4">Dispute & QA Mechanism</td>
                   <td className="py-4 font-mono font-bold text-success">AI scoring + creator dispute window + bond slashing</td>
-                  <td className="py-4 text-base-content/50">Subjective customer support tickets</td>
+                  <td className="py-4 text-base-content/60">Subjective customer support tickets</td>
                 </tr>
                 <tr>
                   <td className="font-bold text-base-content py-4">Custody & Transparency</td>
                   <td className="py-4 font-mono font-bold text-success">100% Non-Custodial Smart Contracts</td>
-                  <td className="py-4 text-base-content/50">Centralized corporate bank accounts</td>
+                  <td className="py-4 text-base-content/60">Centralized corporate bank accounts</td>
                 </tr>
               </tbody>
             </table>
@@ -570,12 +573,12 @@ export default function LandingPage() {
       </section>
 
       {/* ─── Footer ─── */}
-      <footer className="border-t border-base-300/40 py-10 px-6 md:px-12 text-xs text-base-content/50">
+      <footer className="border-t border-base-300/40 py-10 px-6 md:px-12 text-xs text-base-content/60">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2">
             <ParallaxMark className="w-5 h-5" />
             <span className="font-bold text-base-content">Parallax Protocol</span>
-            <span className="text-[10px] text-base-content/40 font-mono">v1.0 (Monad Testnet)</span>
+            <span className="text-[10px] text-base-content/60 font-mono">v1.0 (Monad Testnet)</span>
           </div>
 
           <div className="flex items-center gap-6">

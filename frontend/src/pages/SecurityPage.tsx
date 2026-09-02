@@ -124,7 +124,7 @@ export default function SecurityPage() {
       </main>
 
       {/* ─── Footer ─── */}
-      <footer className="border-t border-base-300/40 mt-16 py-8 px-6 text-xs text-base-content/50">
+      <footer className="border-t border-base-300/40 mt-16 py-8 px-6 text-xs text-base-content/60">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <ParallaxMark className="w-4 h-4" />

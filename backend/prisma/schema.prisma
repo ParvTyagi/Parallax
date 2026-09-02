@@ -38,7 +38,17 @@ model Task {
   status      TaskStatus @default(PENDING)
   solution    String?    @db.Text
   createdAt   DateTime   @default(now())
+
+  // Structured spec, hydrated from the SpecDraft pinned at decompose time.
+  objective       String?  @db.Text
+  successCriteria String[] @default([])
+
+  // Block the TaskCreated event was seen in — lets the UI show indexing lag.
+  blockNumber Int?
+
   subtasks    Subtask[]
+
+  @@index([creator])
 }
 
 model Subtask {
@@ -59,8 +69,24 @@ model Subtask {
   aiFlags         String[]     @default([])
   disputeDeadline DateTime?
   createdAt       DateTime     @default(now())
+
+  // Structured spec (hydrated from SpecDraft via the description CID).
+  objective          String?  @db.Text
+  contextNotes       String?  @db.Text
+  acceptanceCriteria String[] @default([])
+  deliverableFormat  String?
+  skills             String[] @default([])
+  estimatedMinutes   Int?
+
+  // Per-criterion verdicts written back by the AI verifier:
+  // [{ "criterion": string, "met": boolean, "note": string }]
+  criteriaResults    Json?
   task            Task         @relation(fields: [taskId], references: [taskId])
   submissions     Submission[]
+
+  @@index([taskId])
+  @@index([worker])
+  @@index([state])
 }
 
 model Submission {
@@ -90,4 +116,64 @@ model WorkerProfile {
   failedTasks     Int      @default(0)
   reputationScore Int      @default(0)
   updatedAt       DateTime @updatedAt
+}
+
+/// Structured subtask/master spec, written when the orchestrator decomposes a task
+/// and keyed by the IPFS CID that later lands on-chain as the `description` field.
+/// The chain listener looks the CID up to hydrate Task/Subtask columns, because the
+/// contract only ever carries the CID itself.
+model SpecDraft {
+  cid                String   @id
+  kind               String   // "MASTER" | "SUBTASK"
+  title              String?
+  objective          String?  @db.Text
+  contextNotes       String?  @db.Text
+  acceptanceCriteria String[] @default([])
+  deliverableFormat  String?
+  skills             String[] @default([])
+  estimatedMinutes   Int?
+  markdown           String?  @db.Text
+  createdAt          DateTime @default(now())
+}
+
+/// Durable cursor for the chain event poller. Without this, a backend restart
+/// (e.g. a Render free-tier cold start) silently drops every event emitted while
+/// the process was down, and those tasks never appear in the UI.
+model ChainCursor {
+  id        String   @id            // contract address, lowercased
+  lastBlock Int
+  updatedAt DateTime @updatedAt
+}
+
+/// Metadata for an uploaded dataset attachment, keyed by its IPFS CID.
+///
+/// The bytes live on IPFS (or, without Pinata credentials, only in this process's
+/// memory — hence `ephemeral`). The manifest is persisted here so a worker can
+/// browse a large archive's contents without downloading it, and so the file
+/// listing survives a backend restart.
+model Attachment {
+  cid              String   @id
+  filename         String
+  mimetype         String
+  size             Int
+  isArchive        Boolean  @default(false)
+  entryCount       Int?
+  uncompressedSize Int?
+  entries          Json?
+  truncated        Boolean  @default(false)
+  ephemeral        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+}
+
+/// Durable copy of every text blob we pin, keyed by its CID.
+///
+/// Without this the only copy of a task/subtask description outside IPFS lived in
+/// `mockIpfsStore`, a process-local Map. After a restart — or whenever a Pinata
+/// upload failed and `pinToIPFS` fell back to a locally generated CID that was
+/// never actually on IPFS — every gateway lookup missed and the UI rendered the
+/// bare CID where the description should be.
+model IpfsText {
+  cid       String   @id
+  content   String   @db.Text
+  createdAt DateTime @default(now())
 }

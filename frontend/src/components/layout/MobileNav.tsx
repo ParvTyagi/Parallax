@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Menu,
@@ -16,6 +16,16 @@ export default function MobileNav() {
   const location = useLocation();
   const { account, balance, connectWallet, isConnecting } = useWeb3();
   const isAdmin = account?.toLowerCase() === "0xf302d2f179baf42d6f02e337b25cf882499b39e6";
+
+  // Without this a keyboard user who opens the drawer has no way to dismiss it.
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   const isActive = (path: string) => {
     if (path === "/app") return location.pathname === "/app";
@@ -52,16 +62,18 @@ export default function MobileNav() {
                   disabled={isConnecting}
                   className="btn btn-xs btn-neutral font-semibold"
                 >
-                  {isConnecting ? <span className="loading loading-spinner loading-xs" /> : "Connect"}
+                  {isConnecting ? <span aria-hidden="true" className="loading loading-spinner loading-xs" /> : "Connect"}
                 </button>
               )}
 
               <label
                 htmlFor="mobile-nav-drawer"
                 className="btn btn-square btn-ghost btn-sm text-base-content"
-                aria-label="Open menu"
+                aria-label={open ? "Close menu" : "Open menu"}
+                aria-expanded={open}
+                aria-controls="mobile-nav-panel"
               >
-                <Menu className="w-5 h-5" />
+                <Menu aria-hidden="true" className="w-5 h-5" />
               </label>
             </div>
           </header>
@@ -74,7 +86,11 @@ export default function MobileNav() {
             aria-label="Close menu"
             className="drawer-overlay"
           />
-          <div className="bg-base-100 min-h-full w-72 flex flex-col shadow-2xl border-l border-base-300">
+          <nav
+            id="mobile-nav-panel"
+            aria-label="Main"
+            className="bg-base-100 min-h-full w-72 flex flex-col shadow-2xl border-l border-base-300"
+          >
             {/* Header */}
             <div className="h-16 flex items-center justify-between px-5 border-b border-base-300">
               <ParallaxLogo />
@@ -83,14 +99,14 @@ export default function MobileNav() {
                 className="btn btn-square btn-ghost btn-xs"
                 aria-label="Close"
               >
-                <X className="w-4 h-4" />
+                <X aria-hidden="true" className="w-4 h-4" />
               </button>
             </div>
 
             {/* Links */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
               <div>
-                <span className="text-[10px] font-bold tracking-wider text-base-content/40 uppercase block px-3 mb-2">
+                <span className="text-[10px] font-bold tracking-wider text-base-content/60 uppercase block px-3 mb-2">
                   Client
                 </span>
                 <ul className="space-y-1">
@@ -112,7 +128,7 @@ export default function MobileNav() {
               </div>
 
               <div>
-                <span className="text-[10px] font-bold tracking-wider text-base-content/40 uppercase block px-3 mb-2">
+                <span className="text-[10px] font-bold tracking-wider text-base-content/60 uppercase block px-3 mb-2">
                   Freelancer
                 </span>
                 <ul className="space-y-1">
@@ -174,7 +190,7 @@ export default function MobileNav() {
               )}
 
               <div>
-                <span className="text-[10px] font-bold tracking-wider text-base-content/40 uppercase block px-3 mb-2">
+                <span className="text-[10px] font-bold tracking-wider text-base-content/60 uppercase block px-3 mb-2">
                   Resources
                 </span>
                 <ul className="space-y-1">
@@ -204,12 +220,12 @@ export default function MobileNav() {
                 )}
               </div>
               {account && (
-                <p className="text-[11px] font-mono text-base-content/40 truncate">
+                <p className="text-[11px] font-mono text-base-content/60 truncate">
                   {account}
                 </p>
               )}
             </div>
-          </div>
+          </nav>
         </div>
       </div>
     </>
