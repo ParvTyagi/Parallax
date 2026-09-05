@@ -9,13 +9,13 @@
 
 ---
 
-## 🤔 What is this?
+## What is this?
 Parallax is a decentralized, AI-orchestrated microtasking platform built on the Monad blockchain. It takes massive, complex customer workloads, dynamically slices them into bite-sized tasks, and distributes them to a global network of workers. Once a worker completes their piece, an AI verifies the work and the Monad smart contract instantly releases the payment.
 
-## ⚠️ Why do we need this?
+## Why do we need this?
 Currently, decentralized compute networks treat processing as a single, monolithic block. If a customer needs 10,000 images tagged, or a massive codebase refactored, they have to wait for one single worker (or node) to process the entire job sequentially, which is slow and inefficient. Furthermore, verifying subjective or complex work on-chain is notoriously difficult without trusted central authorities.
 
-## 💡 What our project is doing
+## What our project is doing
 Parallax solves this by leveraging **Monad's parallel execution capabilities** alongside AI intelligence. 
 
 1. **AI Decomposition:** Customers input a large task; the AI Orchestrator slices it into independent subtasks, each with an explicit objective, deliverable format, and a set of objectively checkable acceptance criteria. The customer reviews and edits that breakdown before anything reaches the chain.
@@ -25,7 +25,7 @@ Parallax solves this by leveraging **Monad's parallel execution capabilities** a
 5. **Dataset Attachments:** Customers can attach whole folders or multi-file datasets. They are zipped in the browser, pinned to IPFS, and workers can browse the archive's contents or pull a single file without downloading the whole bundle.
 6. **Automated Master Aggregation:** When all subtasks reach `VERIFIED` status, the AI seamlessly merges the disjointed worker outputs into one cohesive final solution for the customer.
 
-## 🌐 Live Links
+## Live Links
 
 - **Frontend Application (Vercel):** [https://parallax-mu-sand.vercel.app/](https://parallax-mu-sand.vercel.app/)
 - **Backend API (Render):** [https://parallax-8yob.onrender.com](https://parallax-8yob.onrender.com)
@@ -34,13 +34,13 @@ Parallax solves this by leveraging **Monad's parallel execution capabilities** a
 - `ParallaxEscrow`: [0x5e70Ae4fdB3301693606e9D1ef1a92721896EED9](https://testnet.monadexplorer.com/address/0x5e70Ae4fdB3301693606e9D1ef1a92721896EED9)
 - `ParallaxTaskManager`: [0x7371e2777cD7Cbf9d3bE33F780122C1C9C9A4F20](https://testnet.monadexplorer.com/address/0x7371e2777cD7Cbf9d3bE33F780122C1C9C9A4F20)
 
-## 🛠 Tech Stack
+## Tech Stack
 - **Smart Contracts:** Solidity, Hardhat, Ethers.js
 - **Blockchain:** Monad Testnet
 - **Backend:** Node.js, Express, Prisma (PostgreSQL), Gemini API
 - **Frontend:** React, Vite, Tailwind CSS, DaisyUI
 
-## 🚀 How to Setup (Local Development)
+## How to Setup (Local Development)
 
 ### 1. Smart Contracts
 ```bash
@@ -68,7 +68,7 @@ npm install
 npm run dev
 ```
 
-## 🔮 What's Next?
+## What's Next?
 - **Decentralized Deliverable Storage:** Worker submissions are currently persisted server-side; pinning them to IPFS alongside task specs and datasets.
 - **Policy Layer Before Payout:** Bounding what the Orchestrator key can auto-approve, and escalating high-value releases to the customer.
 - **ZK Proof Verification:** Transitioning from an AI Orchestrator wallet to Zero-Knowledge coprocessors for mathematically provable off-chain compute verification.
