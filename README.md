@@ -74,4 +74,4 @@ npm run dev
 - **ZK Proof Verification:** Transitioning from an AI Orchestrator wallet to Zero-Knowledge coprocessors for mathematically provable off-chain compute verification.
 
 ---
-*Built for the Monad Hackathon.*
+**Built for the Monad Hackathon.**
