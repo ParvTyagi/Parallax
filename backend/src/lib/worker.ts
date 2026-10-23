@@ -1,14 +1,18 @@
 import { fetchFromIPFS } from "./ipfs";
 import { prisma } from "../db/client";
-import { generateWithGemini } from "./gemini";
+import { generateWithGemini, generateVerificationWithGemini } from "./gemini";
 import { sendOrchestratorTx } from "./orchestrator";
+import { syncTransaction } from "./chain";
 import dotenv from "dotenv";
+import { ethers } from "ethers";
+import { getPrivateSubmission } from "./privateSubmissions";
+import { getDeployment, getTaskDeployment } from "./deployments";
 
 dotenv.config();
 
 export async function startJobWorker() {
   console.log("Starting durable DB job worker...");
-  startPayoutSweeper();
+  const activeAddress = getDeployment().taskManagerAddress.toLowerCase();
 
   setInterval(async () => {
     try {
@@ -24,6 +28,16 @@ export async function startJobWorker() {
         WHERE id = (
           SELECT id FROM "Job"
           WHERE status = 'PENDING'
+          AND (
+            (type = 'VERIFY' AND EXISTS (
+              SELECT 1 FROM "Subtask" s JOIN "Task" t ON t."taskId" = s."taskId"
+              WHERE s."subtaskId" = "Job".payload->>'subtaskId'
+                AND lower(t."contractAddress") = ${activeAddress}
+            )) OR (type = 'AGGREGATE' AND EXISTS (
+              SELECT 1 FROM "Task" t WHERE t."taskId" = "Job".payload->>'taskId'
+                AND lower(t."contractAddress") = ${activeAddress}
+            ))
+          )
           ORDER BY "createdAt" ASC
           LIMIT 1
           FOR UPDATE SKIP LOCKED
@@ -77,9 +91,17 @@ async function handleVerify(payload: { subtaskId: string }) {
   if (!subtask || subtask.submissions.length === 0) {
     throw new Error("Subtask or submission not found");
   }
+  const deployment = getTaskDeployment(subtask.task.contractAddress);
 
-  const workerSubmissionCID = subtask.submissions[0].storagePath;
-  const workerSubmissionText = await fetchFromIPFS(workerSubmissionCID);
+  const storedSubmission = subtask.submissions[0];
+  const workerSubmissionText = storedSubmission.storagePath.startsWith("supabase:")
+    ? await getPrivateSubmission(storedSubmission.storagePath.slice("supabase:".length)) || ""
+    : await fetchFromIPFS(storedSubmission.storagePath);
+  if (!workerSubmissionText) throw new Error("Submission content is unavailable");
+  if (storedSubmission.storagePath.startsWith("supabase:") && subtask.submissionHash &&
+      ethers.id(workerSubmissionText).toLowerCase() !== subtask.submissionHash.toLowerCase()) {
+    throw new Error("Submission content does not match its on-chain proof");
+  }
 
   const subtaskRequirementText = await fetchFromIPFS(subtask.description);
 
@@ -104,9 +126,13 @@ async function handleVerify(payload: { subtaskId: string }) {
     }
   });
 
-  await sendOrchestratorTx(`verifySubtask ${subtaskId.slice(0, 10)}`, (contract, overrides) =>
-    contract.verifySubtask(subtask.taskId, subtaskId, passed, score, overrides)
+  const receipt = await sendOrchestratorTx(`verifySubtask ${subtaskId.slice(0, 10)}`, (contract, overrides) =>
+    contract.verifySubtask(subtask.taskId, subtaskId, passed, score, overrides),
+    deployment.taskManagerAddress
   );
+  try { await syncTransaction(receipt.hash); } catch (error) {
+    console.warn("[Verify] Receipt indexing will be retried by the poller:", error);
+  }
 }
 
 export interface CriterionResult {
@@ -157,6 +183,7 @@ WORKER SUBMISSION:
 ${input.submission}
 </submission>
 
+Copy each acceptance criterion exactly, in its original order.
 For EVERY acceptance criterion, decide whether the submission meets it and give a
 one-sentence note quoting or pointing to the specific evidence. Do not mark a
 criterion met on the assumption that content exists elsewhere.
@@ -176,7 +203,7 @@ Return ONLY valid JSON, no markdown fences:
   try {
     // Retries across models: this verdict releases escrowed funds, so a single
     // overloaded model must not decide it.
-    const raw = await generateWithGemini(prompt);
+    const raw = await generateVerificationWithGemini(prompt);
     const text = raw.trim().replace(/```json/gi, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(text);
 
@@ -187,6 +214,13 @@ Return ONLY valid JSON, no markdown fences:
           note: String(c?.note || "")
         }))
       : [];
+
+    if (input.criteria.length && (
+      criteriaResults.length !== input.criteria.length ||
+      criteriaResults.some((result, i) => result.criterion.trim() !== input.criteria[i].trim())
+    )) {
+      throw new Error("Model returned incomplete or mismatched acceptance criteria");
+    }
 
     const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0)));
     const allMet = criteriaResults.length === 0 || criteriaResults.every((c) => c.met);
@@ -200,41 +234,11 @@ Return ONLY valid JSON, no markdown fences:
     };
   } catch (err: any) {
     // Never approve work the AI could not actually grade: this verdict releases
-    // escrowed MON. Throwing leaves the job to retry and the subtask SUBMITTED
+    // escrowed ETH. Throwing leaves the job to retry and the subtask SUBMITTED
     // with no transaction sent — stuck and visible beats wrongly paid.
     console.error("[Verify] Verification could not be completed:", err?.message || err);
     throw new Error(`AI verification unavailable: ${err?.message || err}`);
   }
-}
-
-/// Subtasks that passed AI verification sit in PENDING_RELEASE for a 48h creator dispute window.
-/// Nothing else calls releasePayout automatically, so this sweep finalizes payouts once that
-/// window elapses undisputed — otherwise funds and worker bonds would sit locked indefinitely.
-function startPayoutSweeper() {
-  setInterval(async () => {
-    try {
-      const releasable = await prisma.subtask.findMany({
-        where: { state: "PENDING_RELEASE", disputeDeadline: { lte: new Date() } }
-      });
-
-      if (releasable.length === 0) return;
-
-      for (const subtask of releasable) {
-        try {
-          await sendOrchestratorTx(
-            `releasePayout ${subtask.subtaskId.slice(0, 10)}`,
-            (contract, overrides) =>
-              contract.releasePayout(subtask.taskId, subtask.subtaskId, overrides)
-          );
-          console.log(`[PayoutSweeper] Released payout for subtask ${subtask.subtaskId}`);
-        } catch (err: any) {
-          console.error(`[PayoutSweeper] Failed to release ${subtask.subtaskId}:`, err.message);
-        }
-      }
-    } catch (e) {
-      console.error("Payout sweeper error:", e);
-    }
-  }, 60000); // Check once a minute
 }
 
 async function handleAggregate(payload: { taskId: string }) {
@@ -246,13 +250,16 @@ async function handleAggregate(payload: { taskId: string }) {
   });
 
   if (!task) throw new Error("Task not found");
+  getTaskDeployment(task.contractAddress);
 
   const masterTaskRequirementText = await fetchFromIPFS(task.description);
 
   // Fetch all worker submissions from IPFS in parallel
   const allWorkPromises = task.subtasks.map(async (st) => {
-    const workerOutputCID = st.submissions[0]?.storagePath || "";
-    const workerOutputText = await fetchFromIPFS(workerOutputCID);
+    const submission = st.submissions[0];
+    const workerOutputText = !submission ? "" : submission.storagePath.startsWith("supabase:")
+      ? await getPrivateSubmission(submission.storagePath.slice("supabase:".length)) || ""
+      : await fetchFromIPFS(submission.storagePath);
     const subtaskRequirementText = await fetchFromIPFS(st.description);
     return `[Subtask Requirement: ${subtaskRequirementText}]\nWorker Output: ${workerOutputText}\n`;
   });

@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { PageLoading } from "../components/ui/PageState";
+import { useState, useEffect, useMemo, useRef, type ComponentProps } from "react";
 import { useWeb3 } from "../contexts/Web3Context";
 import { ethers } from "ethers";
-import { API_URL } from "../lib/constants";
-import { taskHeadline, taskHeadlineText, MISSING_BRIEF_HINT } from "../lib/utils";
+import { API_URL, ETH_CHAIN_ID } from "../lib/constants";
+import { taskHeadline, MISSING_BRIEF_HINT, syncTaskTx } from "../lib/utils";
+import { privateAccessHeaders } from "../lib/privateAccess";
 import { Link } from "react-router-dom";
 import { ReviewSubtasksModal, type DraftSubtask } from "../components/task/ReviewSubtasksModal";
 import {
@@ -12,85 +14,62 @@ import {
 } from "../components/task/AttachmentUploader";
 import {
   Layers,
-  CheckCircle2,
   Coins,
   Sparkles,
-  Shield,
   ArrowRight,
   AlertCircle,
-  Clock,
   Search,
-  Lock,
+  ArrowUpRight,
 } from "lucide-react";
 
-const BADGE_MAP: Record<string, { label: string; cls: string }> = {
-  OPEN:            { label: "OPEN", cls: "badge-info" },
-  CLAIMED:         { label: "CLAIMED", cls: "badge-warning" },
-  SUBMITTED:       { label: "SUBMITTED", cls: "badge-secondary" },
-  PENDING_RELEASE: { label: "DISPUTE WINDOW", cls: "badge-warning" },
-  IN_DISPUTE:      { label: "IN DISPUTE", cls: "badge-error" },
-  VERIFIED:        { label: "VERIFIED", cls: "badge-success" },
-  FAILED:          { label: "FAILED", cls: "badge-error" },
-  REJECTED:        { label: "REJECTED", cls: "badge-error" },
-};
+type ReviewedPlan = { masterTaskCID: string; finalSubtasks: DraftSubtask[] };
+type CreationAttempt = { plan: ReviewedPlan; account: string; txHash?: string; confirmed?: boolean };
 
-const PROMPT_TEMPLATES = [
-  {
-    label: "DeFi Research",
-    text: "Research the top 5 decentralized liquidity protocols on Monad, compare their fee structures, TVL growth, and summarize key findings in structured markdown.",
-    budget: "10.0",
-  },
-  {
-    label: "Smart Contract Audit",
-    text: "Review the ERC-20 staking vault contract for reentrancy vectors, unhandled return values, integer underflow risks, and produce a formal security report.",
-    budget: "25.0",
-  },
-  {
-    label: "Data Annotation",
-    text: "Analyze and categorize 200 customer support tickets into billing, technical, and feature request buckets with confidence scores.",
-    budget: "8.5",
-  },
-];
+function deriveTaskStatus(subtasks: any[], taskStatus?: string): { label: string; cls: string; dot: string } {
+  if (
+    taskStatus === "CANCELLED" ||
+    (subtasks && subtasks.length > 0 && subtasks.every((s) => s.state === "CANCELLED"))
+  ) {
+    return { label: "Cancelled", cls: "badge-ghost text-base-content/60", dot: "bg-base-content/40" };
+  }
+  if (!subtasks || subtasks.length === 0) return { label: "Draft", cls: "badge-ghost", dot: "bg-base-300" };
+  if (subtasks.some((s) => s.state === "VERIFICATION_FAILED")) return { label: "Verification failed", cls: "badge-error", dot: "bg-error" };
+  if (subtasks.some((s) => s.state === "IN_DISPUTE")) return { label: "In Dispute", cls: "badge-error", dot: "bg-error" };
+  if (subtasks.every((s) => s.state === "VERIFIED")) return { label: "Completed", cls: "badge-success", dot: "bg-success" };
+  if (subtasks.some((s) => s.state === "SUBMITTED")) return { label: "In Review", cls: "badge-info", dot: "bg-info" };
+  return { label: "Active", cls: "badge-neutral", dot: "bg-primary" };
+}
 
 const CustomerDashboard = () => {
-  const { account, balance, taskManager, connectWallet } = useWeb3();
+  const { account, balance, taskManager, provider, connectWallet, currencySymbol, networkName } = useWeb3();
+  const currency = currencySymbol || "ETH";
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [errorText, setErrorText] = useState("");
   const [attachment, setAttachment] = useState<UploadedAttachment | null>(null);
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [aiModel, setAiModel] = useState("gemini-3.7-flash");
   const [activeTab, setActiveTab] = useState<"create" | "tasks">("create");
 
   const DESCRIPTION_MAX = 2000;
-  /// Below this a brief rarely carries enough scope for the orchestrator to cut
-  /// it into subtasks a stranger can execute without asking questions.
   const DESCRIPTION_ADVISORY_MIN = 80;
 
   const budgetNum = Number(budget);
   const balanceNum = balance === null ? null : Number(balance);
 
-  /// One place that decides whether the form can be submitted, so the button and
-  /// the message under it can never disagree.
   const validation = useMemo(() => {
     if (!description.trim()) return { ok: false, reason: "Add a job description first." };
-    if (!budget.trim()) return { ok: false, reason: "Set a budget in MON." };
+    if (!budget.trim()) return { ok: false, reason: `Set a budget in ${currency}.` };
     if (!Number.isFinite(budgetNum) || budgetNum <= 0) {
-      return { ok: false, reason: "Budget must be greater than 0 MON." };
+      return { ok: false, reason: `Budget must be greater than 0 ${currency}.` };
     }
     return { ok: true, reason: "" };
-  }, [description, budget, budgetNum]);
+  }, [description, budget, budgetNum, currency]);
 
-  /// Advisory only — never blocks. Gas is paid on top of the escrowed budget and
-  /// the balance can change between now and signing.
   const overBalance = balanceNum !== null && budgetNum > 0 && budgetNum > balanceNum;
   const briefIsThin =
     description.trim().length > 0 && description.trim().length < DESCRIPTION_ADVISORY_MIN;
 
-  /// The orchestrator is prompted for 3-5 subtasks and splits the budget across
-  /// them, so this is the range a creator should expect per subtask.
   const perSubtask =
     budgetNum > 0
       ? { high: budgetNum / 3, low: budgetNum / 5 }
@@ -98,8 +77,6 @@ const CustomerDashboard = () => {
 
   const tabRefs = useRef<Partial<Record<"create" | "tasks", HTMLButtonElement | null>>>({});
 
-  /// Arrow/Home/End navigation, which the ARIA tab pattern requires once the
-  /// buttons are exposed as role="tab".
   const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     const order = ["create", "tasks"] as const;
     const i = order.indexOf(activeTab);
@@ -114,39 +91,33 @@ const CustomerDashboard = () => {
     setActiveTab(next);
     tabRefs.current[next]?.focus();
   };
-  const [searchFilter, setSearchFilter] = useState("");
 
+  const [searchFilter, setSearchFilter] = useState("");
   const [myTasks, setMyTasks] = useState<any[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksError, setTasksError] = useState("");
 
   const [draftDecomposition, setDraftDecomposition] = useState<{
     masterTask: string;
     masterTaskCID: string;
     masterObjective?: string;
     successCriteria?: string[];
-    subtasks: Array<{
-      rangeLabel: string;
-      description?: string;
-      descriptionCID: string;
-      objective?: string;
-      contextNotes?: string;
-      acceptanceCriteria?: string[];
-      deliverableFormat?: string;
-      skills?: string[];
-      estimatedMinutes?: number;
-      reward: number;
-      leaseDuration: number;
-    }>;
+    subtasks: ComponentProps<typeof ReviewSubtasksModal>["subtasks"];
   } | null>(null);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [draftBudget, setDraftBudget] = useState("");
+  const [draftAccount, setDraftAccount] = useState("");
+  const [creationAttempt, setCreationAttempt] = useState<CreationAttempt | null>(null);
+  const creationInFlight = useRef(false);
+  const hasSubmittedTransaction = Boolean(creationAttempt?.txHash);
+  const ownsDraft = Boolean(account && account.toLowerCase() === draftAccount.toLowerCase());
 
   useEffect(() => {
-    if (account) fetchCustomerTasks(account);
-    else setMyTasks([]);
+    setMyTasks([]); setTasksError("");
+    if (account) { setTasksLoading(true); void fetchCustomerTasks(account); }
+    else setTasksLoading(false);
   }, [account]);
 
-  // Polls for as long as a wallet is connected. Must not be gated on having
-  // tasks already: a first-time creator starts empty, and their first task only
-  // appears once the backend has indexed it.
   useEffect(() => {
     if (!account) return;
     const interval = setInterval(() => fetchCustomerTasks(account), 5000);
@@ -155,35 +126,19 @@ const CustomerDashboard = () => {
 
   const fetchCustomerTasks = async (walletAddress: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/tasks/customer/${walletAddress}`);
-      if (res.ok) setMyTasks(await res.json());
+      const res = await fetch(`${API_URL}/api/tasks/customer/${walletAddress}`, { headers: privateAccessHeaders(walletAddress) });
+      if (!res.ok) throw new Error("Could not load your projects. Please try again.");
+      setMyTasks(await res.json()); setTasksError("");
     } catch (e) {
-      console.error(e);
-    }
+      setTasksError(e instanceof Error ? e.message : "Could not load your projects.");
+    } finally { setTasksLoading(false); }
   };
 
-  /// Indexes this transaction from its receipt rather than waiting for the block
-  /// poller. Best-effort - the poller still picks it up if this fails.
-  const syncTaskTx = async (txHash: string) => {
-    try {
-      const res = await fetch(`${API_URL}/api/tasks/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txHash }),
-      });
-      return res.ok;
-    } catch (e) {
-      console.warn("Task sync failed, falling back to the chain poller:", e);
-      return false;
-    }
-  };
 
-  /// Waits for the task to appear in the indexer, so the creator is never
-  /// dropped onto an empty "My Tasks" tab.
   const waitForIndexedTask = async (walletAddress: string, previousCount: number) => {
     for (let attempt = 0; attempt < 15; attempt++) {
       try {
-        const res = await fetch(`${API_URL}/api/tasks/customer/${walletAddress}`);
+        const res = await fetch(`${API_URL}/api/tasks/customer/${walletAddress}`, { headers: privateAccessHeaders(walletAddress) });
         if (res.ok) {
           const tasks = await res.json();
           if (Array.isArray(tasks) && tasks.length > previousCount) {
@@ -192,7 +147,7 @@ const CustomerDashboard = () => {
           }
         }
       } catch {
-        // Keep retrying — a transient failure shouldn't end the wait.
+        // Keep retrying
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
@@ -200,13 +155,12 @@ const CustomerDashboard = () => {
   };
 
   const handleDecompose = async () => {
+    if (creationInFlight.current || hasSubmittedTransaction) return;
     if (!account) {
       await connectWallet();
       return;
     }
     if (!validation.ok) {
-      // Previously this returned silently, so an invalid budget made the button
-      // look broken rather than telling the creator what was wrong.
       setErrorText(validation.reason);
       return;
     }
@@ -215,22 +169,14 @@ const CustomerDashboard = () => {
     try {
       let finalDescription = description.trim();
 
-      if (isPrivate) {
-        setStatusText("Encrypting payload with Lit Protocol…");
-        await new Promise((r) => setTimeout(r, 1500));
-        finalDescription = `[ENCRYPTED_LIT_PROTOCOL_PAYLOAD] Original length: ${description.length}\n${finalDescription}`;
-      }
-
       if (attachment) {
-        // Already pinned by the uploader; `ipfs://<cid>` is the marker the task
-        // page parses back out to render the attachment panel.
         const detail = attachment.isArchive && attachment.entryCount
           ? `${attachment.filename} (${attachment.entryCount} files, ${formatBytes(attachment.size)})`
           : `${attachment.filename} (${formatBytes(attachment.size)})`;
         finalDescription += `\n\nAttached Dataset: ${detail} - ipfs://${attachment.cid}`;
       }
 
-      setStatusText("Pinning master task spec to IPFS…");
+      setStatusText("Pinning task specification to IPFS…");
       const ipfsRes = await fetch(`${API_URL}/api/ipfs/upload`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -239,15 +185,18 @@ const CustomerDashboard = () => {
       const ipfsData = await ipfsRes.json();
       if (!ipfsRes.ok) throw new Error(ipfsData.error || "IPFS upload failed");
 
-      setStatusText(`Decomposing task via ${aiModel}…`);
+      setStatusText("Decomposing task with Gemini AI…");
       const res = await fetch(`${API_URL}/api/decompose`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ descriptionCID: ipfsData.cid, budget, aiModel }),
+        body: JSON.stringify({ descriptionCID: ipfsData.cid, budget }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "AI Decomposition failed");
 
+      setDraftBudget(budget);
+      setDraftAccount(account);
+      setCreationAttempt(null);
       setDraftDecomposition({
         masterTask: data.masterTask,
         masterTaskCID: data.masterTaskCID,
@@ -272,21 +221,55 @@ const CustomerDashboard = () => {
     }
   };
 
-  const handleConfirmCreateTask = async (result: { masterTaskCID: string; finalSubtasks: DraftSubtask[] }) => {
+  const saveReviewedPlan = (plan: ReviewedPlan) => {
+    setDraftDecomposition((draft) => draft ? {
+      ...draft, masterTaskCID: plan.masterTaskCID, subtasks: plan.finalSubtasks,
+    } : draft);
+  };
+
+  const handleConfirmCreateTask = async (result: ReviewedPlan) => {
+    if (creationInFlight.current) return;
+    if (!account || !ownsDraft) {
+      setErrorText("Reconnect the wallet used to generate this plan before funding it.");
+      return;
+    }
+    creationInFlight.current = true;
     setIsReviewOpen(false);
     setIsProcessing(true);
     setErrorText("");
+    let attempt: CreationAttempt = creationAttempt?.txHash
+      ? creationAttempt
+      : { plan: result, account };
+    const saveAttempt = (next: CreationAttempt) => {
+      attempt = next;
+      setCreationAttempt(next);
+      saveReviewedPlan(next.plan);
+    };
+    saveAttempt(attempt);
+
     try {
-      setStatusText("Pinning edited subtask specs to IPFS…");
-      const resolvedSubtasks = await Promise.all(
-        result.finalSubtasks.map(async (st) => {
-          // On-chain `description` is always a CID, so an edited row needs a
-          // fresh pin. `/respec` re-renders the brief and re-saves the spec
-          // against the new CID, keeping criteria and CID in sync.
+      if (!taskManager || !provider) throw new Error("Connect your wallet to fund escrow.");
+      const network = await provider.getNetwork();
+      if (network.chainId !== BigInt(ETH_CHAIN_ID)) {
+        throw new Error("Switch your wallet to the project network before continuing.");
+      }
+
+      let receipt: ethers.TransactionReceipt | null = null;
+      if (attempt.txHash && !attempt.confirmed) {
+        setStatusText("Checking the submitted transaction...");
+        receipt = await provider.getTransactionReceipt(attempt.txHash);
+        if (!receipt) {
+          throw new Error("The submitted transaction is not confirmed yet. Check its status again before sending another transaction.");
+        }
+      } else if (!attempt.confirmed) {
+        setStatusText("Pinning edited subtask specs to IPFS...");
+        const resolvedSubtasks: DraftSubtask[] = [];
+        for (const st of attempt.plan.finalSubtasks) {
           if (!st.isEdited && st.descriptionCID) {
-            return { ...st, descriptionCID: st.descriptionCID };
+            resolvedSubtasks.push(st);
+            continue;
           }
-          const pinRes = await fetch(`${API_URL}/api/decompose/respec`, {
+          const pinRes = await fetch(API_URL + "/api/decompose/respec", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -297,182 +280,143 @@ const CustomerDashboard = () => {
               deliverableFormat: st.deliverableFormat,
               skills: st.skills,
               estimatedMinutes: st.estimatedMinutes,
-              reward: parseFloat(st.reward) || 0,
+              reward: Number(st.reward),
               leaseDuration: st.leaseDuration,
-              masterObjective: draftDecomposition?.masterObjective || "",
             }),
           });
           const pinData = await pinRes.json();
-          if (!pinRes.ok) throw new Error(pinData.error || "IPFS upload failed for an edited subtask");
-          return { ...st, descriptionCID: pinData.cid };
-        })
-      );
-
-      setStatusText("Confirming Monad escrow funding in MetaMask…");
-      let totalValue = 0n;
-      const subtasksFormatted = resolvedSubtasks.map((st) => {
-        const rewardStr = parseFloat(st.reward || "0").toFixed(4);
-        const r = ethers.parseEther(rewardStr);
-        totalValue += r;
-        return {
-          rangeLabel: String(st.rangeLabel || "Subtask"),
-          description: String(st.descriptionCID || ""),
-          reward: r,
-          leaseDuration: BigInt(st.leaseDuration || 1800),
-        };
-      });
-
-      if (!taskManager) {
-        throw new Error("Web3 provider not initialized. Please reconnect your wallet.");
+          if (!pinRes.ok) throw new Error(pinData.error || "Failed to pin subtask spec");
+          resolvedSubtasks.push({ ...st, descriptionCID: pinData.cid, isEdited: false });
+          // Keep successfully pinned edits even if a later upload or wallet request fails.
+          saveAttempt({ ...attempt, plan: { ...attempt.plan, finalSubtasks: [
+            ...resolvedSubtasks, ...attempt.plan.finalSubtasks.slice(resolvedSubtasks.length),
+          ] } });
+        }
+        saveAttempt({ ...attempt, plan: { ...attempt.plan, finalSubtasks: resolvedSubtasks } });
+        const subtaskInputs = resolvedSubtasks.map((st, i) => ({
+          rangeLabel: st.rangeLabel || "Subtask " + (i + 1),
+          description: st.descriptionCID,
+          reward: ethers.parseEther(st.reward),
+          leaseDuration: BigInt(st.leaseDuration),
+        }));
+        const totalBudgetWei = subtaskInputs.reduce((acc, st) => acc + st.reward, 0n);
+        setStatusText("Waiting for wallet signature...");
+        const tx = await taskManager.createTask(
+          attempt.plan.masterTaskCID, subtaskInputs, { value: totalBudgetWei }
+        );
+        // Save the hash before waiting: a timeout is not proof the transaction failed.
+        saveAttempt({ ...attempt, txHash: tx.hash });
+        setStatusText("Confirming transaction on " + networkName + "...");
+        try {
+          receipt = await tx.wait();
+        } catch (error: any) {
+          if (error?.code !== "TRANSACTION_REPLACED" || !error.receipt) throw error;
+          if (error.cancelled) {
+            saveAttempt({ ...attempt, txHash: undefined });
+            throw new Error("The transaction was cancelled or replaced in your wallet. Your plan is ready to retry.");
+          }
+          receipt = error.receipt;
+          saveAttempt({ ...attempt, txHash: error.receipt.hash });
+        }
       }
 
-      const tx = await taskManager.createTask(
-        result.masterTaskCID,
-        subtasksFormatted,
-        { value: totalValue }
-      );
+      if (!attempt.confirmed) {
+        if (!receipt) throw new Error("Confirmation is unavailable. Check transaction status again.");
+        if (receipt.status !== 1) {
+          saveAttempt({ ...attempt, txHash: undefined });
+          throw new Error("The transaction reverted. Your plan is saved and you can retry funding.");
+        }
+        saveAttempt({ ...attempt, txHash: receipt.hash, confirmed: true });
+      }
 
-      setStatusText("Transaction submitted! Waiting for Monad confirmation…");
-      await tx.wait();
-
-      setStatusText("Confirmed. Indexing your task…");
-      const previousCount = myTasks.length;
-      await syncTaskTx(tx.hash);
-
+      setStatusText("Updating your project list...");
+      const synced = await syncTaskTx(attempt.txHash!);
+      const indexed = synced || await waitForIndexedTask(attempt.account, myTasks.length);
+      if (!indexed) {
+        throw new Error("Funding succeeded, but the project list is still updating. Retry updating the project list; no new payment is needed.");
+      }
+      await fetchCustomerTasks(attempt.account);
       setDescription("");
       setBudget("");
       setAttachment(null);
-      setIsPrivate(false);
       setDraftDecomposition(null);
+      setCreationAttempt(null);
       setActiveTab("tasks");
-
-      const appeared = account ? await waitForIndexedTask(account, previousCount) : false;
-      setStatusText("");
-      setIsProcessing(false);
-      if (!appeared) {
-        setErrorText(
-          `Task was published on-chain (tx ${tx.hash.slice(0, 10)}…) but the indexer hasn't caught up yet. It will appear here shortly.`
-        );
-      }
     } catch (error: any) {
-      console.error("Task creation error:", error);
-      const friendlyError =
-        error?.reason ||
-        error?.info?.error?.message ||
-        error?.data?.message ||
-        error?.message ||
-        "Transaction failed. Check your wallet balance and network.";
-      setErrorText(friendlyError);
+      if (error?.receipt?.status === 0) {
+        saveAttempt({ ...attempt, txHash: undefined, confirmed: false });
+      } else if (!attempt.txHash && (error?.transactionHash || error?.receipt?.hash)) {
+        saveAttempt({ ...attempt, txHash: error.transactionHash || error.receipt.hash });
+      }
+      console.error("Confirm create task error:", error);
+      setErrorText(error?.reason || error?.info?.error?.message || error?.data?.message || error?.message || "Transaction failed. Your plan is ready to retry.");
+    } finally {
+      creationInFlight.current = false;
       setIsProcessing(false);
       setStatusText("");
     }
   };
 
-  const handleCancelReview = () => {
+  const handleCancelReview = (rows?: DraftSubtask[]) => {
+    if (rows && draftDecomposition) {
+      saveReviewedPlan({ masterTaskCID: draftDecomposition.masterTaskCID, finalSubtasks: rows });
+      // A cancelled review may contain new edits: reopen review before sending.
+      if (!creationAttempt?.txHash) setCreationAttempt(null);
+    }
     setIsReviewOpen(false);
-    setDraftDecomposition(null);
-    setIsProcessing(false);
-    setStatusText("");
   };
 
-  const activeCount = myTasks.filter((t) =>
-    t.subtasks.some((st: any) => st.state !== "VERIFIED")
-  ).length;
-  const completedCount = myTasks.filter(
-    (t) =>
-      t.subtasks.length > 0 &&
-      t.subtasks.every((st: any) => st.state === "VERIFIED")
-  ).length;
-  const totalEscrowedMON = myTasks
+  const filteredTasks = useMemo(() => {
+    if (!searchFilter.trim()) return myTasks;
+    const q = searchFilter.toLowerCase();
+    return myTasks.filter((t) => {
+      const headline = taskHeadline(t).text.toLowerCase();
+      const desc = (t.description || "").toLowerCase();
+      const obj = (t.objective || "").toLowerCase();
+      return headline.includes(q) || desc.includes(q) || obj.includes(q);
+    });
+  }, [myTasks, searchFilter]);
+
+  const isCancelled = (t: any) =>
+    t.status === "CANCELLED" ||
+    (t.subtasks && t.subtasks.length > 0 && t.subtasks.every((st: any) => st.state === "CANCELLED"));
+
+  const isCompleted = (t: any) =>
+    t.status !== "CANCELLED" &&
+    t.subtasks?.length > 0 &&
+    t.subtasks.every((st: any) => st.state === "VERIFIED");
+
+  const activeCount = myTasks.filter((t) => !isCancelled(t) && !isCompleted(t)).length;
+  const completedCount = myTasks.filter((t) => isCompleted(t)).length;
+  const totalEscrowedETH = myTasks
+    .filter((t) => !isCancelled(t))
     .reduce((acc, t) => acc + Number(t.budget || 0), 0)
     .toFixed(2);
 
-  const filteredTasks = myTasks.filter((t) => {
-    if (!searchFilter) return true;
-    return taskHeadlineText(t).toLowerCase().includes(searchFilter.toLowerCase());
-  });
-
   return (
-    <div className="animate-in fade-in duration-300 pb-20">
-      {/* ─── Header Section ─── */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+    <div className="customer-workspace animate-in fade-in duration-300 pb-12">
+      {/* ─── Header ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-base-content">
+          <p className="eyebrow mb-2">Project studio</p>
+          <h1 className="text-2xl font-bold tracking-tight text-base-content">
             Client Workspace
           </h1>
-          <p className="text-sm text-base-content/60 mt-1">
-            Publish complex goals, fund trustless escrows, and let Gemini AI coordinate decentralized execution.
+          <p className="text-sm text-base-content/60 mt-0.5">
+            Turn a clear brief into independent tasks. Review the plan, then fund your project.
           </p>
         </div>
 
-        {/* Action button if on tasks tab */}
         {activeTab === "tasks" && (
           <button
             onClick={() => setActiveTab("create")}
-            className="btn btn-neutral btn-sm font-semibold gap-1.5 self-start md:self-auto"
+            className="btn btn-neutral btn-sm font-semibold gap-1.5 self-start sm:self-auto"
           >
             <Sparkles aria-hidden="true" className="w-3.5 h-3.5" />
             New Project
           </button>
         )}
       </div>
-
-      {/* ─── Metric KPI Cards ─── */}
-      {account && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="card bg-base-100 border border-base-300/80 shadow-xs">
-            <div className="card-body p-4 md:p-5">
-              <div className="flex items-center justify-between text-base-content/60 mb-2">
-                <span className="text-xs font-medium uppercase tracking-wider">Active Projects</span>
-                <Clock className="w-4 h-4 text-info" />
-              </div>
-              <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
-                {activeCount}
-              </div>
-              <span className="text-[11px] text-base-content/60">Under active execution</span>
-            </div>
-          </div>
-
-          <div className="card bg-base-100 border border-base-300/80 shadow-xs">
-            <div className="card-body p-4 md:p-5">
-              <div className="flex items-center justify-between text-base-content/60 mb-2">
-                <span className="text-xs font-medium uppercase tracking-wider">Completed</span>
-                <CheckCircle2 className="w-4 h-4 text-success" />
-              </div>
-              <div className="text-2xl md:text-3xl font-bold font-mono text-success">
-                {completedCount}
-              </div>
-              <span className="text-[11px] text-base-content/60">Verified & settled</span>
-            </div>
-          </div>
-
-          <div className="card bg-base-100 border border-base-300/80 shadow-xs">
-            <div className="card-body p-4 md:p-5">
-              <div className="flex items-center justify-between text-base-content/60 mb-2">
-                <span className="text-xs font-medium uppercase tracking-wider">Escrowed</span>
-                <Coins className="w-4 h-4 text-accent" />
-              </div>
-              <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
-                {totalEscrowedMON} <span className="text-xs font-sans font-medium text-base-content/60">MON</span>
-              </div>
-              <span className="text-[11px] text-base-content/60">Locked in smart contract</span>
-            </div>
-          </div>
-
-          <div className="card bg-base-100 border border-base-300/80 shadow-xs">
-            <div className="card-body p-4 md:p-5">
-              <div className="flex items-center justify-between text-base-content/60 mb-2">
-                <span className="text-xs font-medium uppercase tracking-wider">Total Subtasks</span>
-                <Layers className="w-4 h-4 text-secondary" />
-              </div>
-              <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
-                {myTasks.reduce((acc, t) => acc + (t.subtasks?.length || 0), 0)}
-              </div>
-              <span className="text-[11px] text-base-content/60">Across all projects</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ─── Tabs Bar ─── */}
       <div role="tablist" aria-label="Client workspace" className="flex border-b border-base-300 mb-8 gap-8">
@@ -520,359 +464,280 @@ const CustomerDashboard = () => {
         </button>
       </div>
 
-      {/* ─── CREATE PROJECT TAB ─── */}
+      {/* ─── POST A PROJECT TAB (CLEAN, FOCUSED FORM) ─── */}
       {activeTab === "create" && (
         <div
           role="tabpanel"
           id="panel-create"
           aria-labelledby="tab-create"
-          className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+          className="workspace-compose"
         >
-          {/* Main Form (2 cols) */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="card bg-base-100 border border-base-300/80 shadow-xs">
-              <div className="card-body p-6 md:p-8 gap-6">
-                <div>
-                  <h2 className="text-lg font-bold text-base-content">Project Specifications</h2>
-                  <p className="text-xs text-base-content/60 mt-0.5">
-                    Provide detailed requirements. Gemini will break it down into 3-5 verifiable subtasks.
-                  </p>
-                </div>
+          <aside className="project-guide">
+            <p className="eyebrow">From brief to delivery</p>
+            <h2>A clear path to done.</h2>
+            <ol className="project-steps">
+              <li><span>01</span><div><strong>Define the outcome</strong><p>Describe the deliverable, your constraints, and what success looks like.</p></div></li>
+              <li><span>02</span><div><strong>Review your plan</strong><p>Check the proposed tasks, acceptance criteria, and budget allocation.</p></div></li>
+              <li><span>03</span><div><strong>Fund and follow progress</strong><p>Confirm with your wallet and track each task through verification.</p></div></li>
+            </ol>
+            <div className="brief-tip"><strong>Start with the deliverable.</strong><p>A specific output and measurable criteria help workers understand exactly what you need.</p></div>
+          </aside>
+          <div className="project-form card bg-base-100 border border-base-300/80 shadow-xs">
+            <div className="card-body p-6 md:p-8 space-y-6">
+              <div>
+                <h2 className="text-base font-bold text-base-content">Project brief</h2>
+                <p className="text-xs text-base-content/60 mt-0.5">
+                  Tell us what you need. You can edit every task before committing your budget.
+                </p>
+              </div>
 
-                {/* Quick Templates */}
-                <div>
-                  <span className="text-xs font-semibold text-base-content/60 mb-2 block">
-                    Quick Templates:
+              {/* Job Description */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="task-description"
+                  className="text-xs font-bold text-base-content uppercase tracking-wider flex flex-wrap gap-2 justify-between"
+                >
+                  <span>Job Description (required)</span>
+                  <span
+                    className={`font-mono text-[11px] font-normal ${
+                      description.length >= DESCRIPTION_MAX
+                        ? "text-error"
+                        : description.length > DESCRIPTION_MAX * 0.9
+                          ? "text-warning"
+                          : "text-base-content/60"
+                    }`}
+                  >
+                    {description.length} / {DESCRIPTION_MAX}
                   </span>
-                  <div className="flex flex-wrap gap-2">
-                    {PROMPT_TEMPLATES.map((tmpl) => (
-                      <button
-                        key={tmpl.label}
-                        type="button"
-                        onClick={() => {
-                          // Applying a template replaces whatever is typed, so
-                          // confirm rather than silently discarding the draft.
-                          if (
-                            description.trim() &&
-                            !window.confirm("Replace your current description with this template?")
-                          ) {
-                            return;
-                          }
-                          setDescription(tmpl.text);
-                          setBudget(tmpl.budget);
-                        }}
-                        className="btn btn-xs btn-outline border-base-300 text-base-content/70 hover:bg-base-200 hover:text-base-content"
-                      >
-                        {tmpl.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                </label>
+                <textarea
+                  id="task-description"
+                  required
+                  aria-describedby="task-description-hint"
+                  rows={5}
+                  className="textarea textarea-bordered w-full text-sm leading-relaxed focus:textarea-primary"
+                  placeholder="e.g. Conduct a comprehensive security and architecture analysis of the top 5 DeFi lending protocols on Ethereum. Provide an executive summary and comparative risk matrix in Markdown..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={isProcessing}
+                  maxLength={DESCRIPTION_MAX}
+                />
+                <p id="task-description-hint" className="sr-only">
+                  Describe the work you want done. The orchestrator splits this into independent subtasks. Maximum {DESCRIPTION_MAX} characters.
+                </p>
 
-                {/* Job Description Textarea */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="task-description"
-                    className="text-xs font-bold text-base-content uppercase tracking-wider flex justify-between"
-                  >
-                    <span>Job Description (required)</span>
-                    <span
-                      className={`font-mono text-[11px] font-normal ${
-                        description.length >= DESCRIPTION_MAX
-                          ? "text-error"
-                          : description.length > DESCRIPTION_MAX * 0.9
-                            ? "text-warning"
-                            : "text-base-content/60"
-                      }`}
-                    >
-                      {description.length} / {DESCRIPTION_MAX}
+                {description.length >= DESCRIPTION_MAX && (
+                  <p className="text-[11px] text-error">
+                    Character limit reached. Trim the brief or attach a spec file.
+                  </p>
+                )}
+
+                {briefIsThin && (
+                  <p className="text-[11px] text-warning flex items-start gap-1.5">
+                    <AlertCircle aria-hidden="true" className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    <span>
+                      This brief is short. Clear scope and deliverables ensure better subtask breakdown.
                     </span>
-                  </label>
-                  <textarea
-                    id="task-description"
+                  </p>
+                )}
+              </div>
+
+              {/* Budget */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="task-budget"
+                  className="text-xs font-bold text-base-content uppercase tracking-wider"
+                >
+                  Budget in {currency} (required)
+                </label>
+                <div className="join w-full max-w-xs">
+                  <span className="join-item inline-flex items-center px-4 bg-base-200 border border-base-300 font-mono font-bold text-xs">
+                    {currency}
+                  </span>
+                  <input
+                    id="task-budget"
+                    type="number"
                     required
-                    aria-describedby="task-description-hint"
-                    rows={5}
-                    className="textarea textarea-bordered w-full text-sm leading-relaxed focus:textarea-primary"
-                    placeholder="e.g. Research the top 10 DeFi protocols by TVL on Monad, evaluate their smart contract architecture, and deliver an executive summary in Markdown..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    disabled={isProcessing}
-                    maxLength={DESCRIPTION_MAX}
-                  />
-                  <p id="task-description-hint" className="sr-only">
-                    Describe the work you want done. The orchestrator splits this into
-                    independent subtasks. Maximum {DESCRIPTION_MAX} characters.
-                  </p>
-
-                  {description.length >= DESCRIPTION_MAX && (
-                    <p className="text-[11px] text-error">
-                      Character limit reached — further typing is discarded. Trim the brief or
-                      move the detail into an attached spec file.
-                    </p>
-                  )}
-
-                  {briefIsThin && (
-                    <p className="text-[11px] text-warning flex items-start gap-1.5">
-                      <AlertCircle aria-hidden="true" className="w-3.5 h-3.5 shrink-0 mt-px" />
-                      <span>
-                        This brief is short. Workers cannot ask questions, so state the scope,
-                        the quantity, and what the finished deliverable looks like — vague briefs
-                        produce vague subtasks.
-                      </span>
-                    </p>
-                  )}
-                </div>
-
-                {/* Budget */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="task-budget"
-                    className="text-xs font-bold text-base-content uppercase tracking-wider"
-                  >
-                    Budget in MON (required)
-                  </label>
-                  <div className="join w-full max-w-xs">
-                    <span className="join-item btn btn-sm bg-base-200 border-base-300 font-mono font-bold text-xs">
-                      MON
-                    </span>
-                    <input
-                      id="task-budget"
-                      type="number"
-                      required
-                      min="0.01"
-                      step="0.01"
-                      placeholder="0.00"
-                      aria-describedby="task-budget-hint"
-                      className="input input-sm input-bordered join-item w-full font-mono text-sm"
-                      value={budget}
-                      onChange={(e) => setBudget(e.target.value)}
-                      disabled={isProcessing}
-                    />
-                  </div>
-                  <p id="task-budget-hint" className="text-[11px] text-base-content/60">
-                    Escrowed on Monad & split across generated subtasks. Sybil resistance comes from the
-                    MON bond every worker posts to claim a subtask, not from a reputation gate.
-                  </p>
-
-                  {perSubtask && (
-                    <p className="text-[11px] text-base-content/60 font-mono">
-                      ≈ 3–5 subtasks · roughly {perSubtask.low.toFixed(2)}–{perSubtask.high.toFixed(2)}{" "}
-                      MON each
-                    </p>
-                  )}
-
-                  {overBalance && (
-                    <p className="text-[11px] text-warning flex items-start gap-1.5">
-                      <AlertCircle aria-hidden="true" className="w-3.5 h-3.5 shrink-0 mt-px" />
-                      <span>
-                        This is more than your {balance} MON balance. The escrow transaction will be
-                        rejected at signing, and gas is charged on top of the budget.
-                      </span>
-                    </p>
-                  )}
-                </div>
-
-                {/* Dataset Attachment (optional) */}
-                <div className="space-y-1.5 pt-2 border-t border-base-300/60">
-                  <label className="text-xs font-bold text-base-content uppercase tracking-wider">
-                    Attach Dataset / Spec Files (optional)
-                  </label>
-                  <p className="text-[11px] text-base-content/60">
-                    Pick several files or a whole folder. They are zipped in your browser before
-                    upload, pinned to IPFS as one archive, and workers can browse or download
-                    individual files from the task page.
-                  </p>
-                  <AttachmentUploader
-                    attachment={attachment}
-                    onChange={setAttachment}
+                    min="0.001"
+                    step="0.001"
+                    placeholder="0.00"
+                    aria-describedby="task-budget-hint"
+                    className="input input-sm input-bordered join-item w-full font-mono text-sm"
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
                     disabled={isProcessing}
                   />
                 </div>
-
-                {/* AI Model & Lit Privacy */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2 border-t border-base-300/60">
-                  <div className="space-y-1.5">
-                    <label
-                      htmlFor="task-ai-model"
-                      className="text-xs font-bold text-base-content uppercase tracking-wider"
-                    >
-                      AI Orchestrator Engine
-                    </label>
-                    <select
-                      id="task-ai-model"
-                      value={aiModel}
-                      onChange={(e) => setAiModel(e.target.value)}
-                      disabled={isProcessing}
-                      className="select select-sm select-bordered w-full text-xs"
-                    >
-                      <option value="gemini-3.7-flash">⚡ Gemini 3.7 Flash — Deep Reasoning</option>
-                      <option value="gemini-3.6-flash">✦ Gemini 3.6 Flash — Balanced</option>
-                      <option value="gemini-3.5-flash">✦ Gemini 3.5 Flash — Ultra-fast</option>
-                      <option value="gemini-3.1-pro-preview">🧠 Gemini 3.1 Pro — Advanced</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-base-content uppercase tracking-wider">
-                      Payload Privacy
-                    </label>
-                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-base-200/60 border border-base-300">
-                      <div className="flex items-center gap-2">
-                        <Lock aria-hidden="true" className="w-3.5 h-3.5 text-base-content/60" />
-                        <div>
-                          <p className="text-xs font-semibold text-base-content">Lit Protocol Encryption</p>
-                          <p className="text-[10px] text-base-content/60">Only claimant workers can decrypt</p>
-                        </div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        aria-label="Encrypt the job description with Lit Protocol so only claimant workers can read it"
-                        className="toggle toggle-sm toggle-neutral"
-                        checked={isPrivate}
-                        onChange={(e) => setIsPrivate(e.target.checked)}
-                        disabled={isProcessing}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Error Banner */}
-                {errorText && (
-                  <div role="alert" className="alert alert-error text-xs py-2.5">
-                    <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
-                    <span>{errorText}</span>
-                  </div>
-                )}
-
-                {/* Progress for the multi-step create flow. Announced politely so
-                    a screen-reader user hears each step, not just the spinner. */}
-                <p role="status" aria-live="polite" className="sr-only">
-                  {isProcessing ? statusText || "Working…" : ""}
+                <p id="task-budget-hint" className="text-[11px] text-base-content/60">
+                  Escrowed on Ethereum & split across generated subtasks. Workers post an {currency} claim bond.
                 </p>
 
-                {draftDecomposition && (
-                  <ReviewSubtasksModal
-                    open={isReviewOpen}
-                    masterTask={draftDecomposition.masterTask}
-                    masterTaskCID={draftDecomposition.masterTaskCID}
-                    masterObjective={draftDecomposition.masterObjective}
-                    successCriteria={draftDecomposition.successCriteria}
-                    budget={budget}
-                    subtasks={draftDecomposition.subtasks}
-                    onConfirm={handleConfirmCreateTask}
-                    onCancel={handleCancelReview}
-                  />
+                {perSubtask && (
+                  <p className="text-[11px] text-base-content/60 font-mono">
+                    ≈ 3–5 subtasks · roughly {perSubtask.low.toFixed(4)}–{perSubtask.high.toFixed(4)}{" "}
+                    {currency} each
+                  </p>
                 )}
 
-                {/* Submit Action */}
-                <div className="pt-2 border-t border-base-300/60 space-y-2">
-                  {/* Disabled only while work is in flight. An invalid form keeps
-                      the button live so pressing it explains what is missing,
-                      instead of presenting a control that silently does nothing. */}
-                  <button
-                    onClick={handleDecompose}
-                    disabled={isProcessing}
-                    aria-describedby={!validation.ok && account ? "submit-blocked-reason" : undefined}
-                    className="btn btn-neutral btn-block font-bold text-sm shadow-xs"
-                  >
-                    {isProcessing ? (
-                      <span className="flex items-center gap-2">
-                        <span className="loading loading-spinner loading-xs" aria-hidden="true" />
-                        {statusText || "Decomposing & funding escrow…"}
-                      </span>
-                    ) : account ? (
-                      <span className="flex items-center gap-2">
-                        Request AI Decomposition & Fund Escrow
-                        <ArrowRight aria-hidden="true" className="w-4 h-4" />
-                      </span>
-                    ) : (
-                      "Connect Wallet to Post"
+                {overBalance && (
+                  <p className="text-[11px] text-warning flex items-start gap-1.5">
+                    <AlertCircle aria-hidden="true" className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    <span>
+                      This is more than your {balance} {currency} balance. The escrow transaction will fail at signing.
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              {/* Attachments */}
+              <div className="space-y-1.5 pt-2 border-t border-base-300/60">
+                <label className="text-xs font-bold text-base-content uppercase tracking-wider">
+                  Attach Dataset / Spec Files (optional)
+                </label>
+                <p className="text-[11px] text-base-content/60">
+                  Upload files or folders. Pinned directly to IPFS for workers to inspect.
+                </p>
+                <AttachmentUploader
+                  attachment={attachment}
+                  onChange={setAttachment}
+                  disabled={isProcessing}
+                />
+              </div>
+
+              {/* Error Banner */}
+              {errorText && (
+                <div role="alert" className="alert alert-error text-xs py-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{errorText}</span>
+                </div>
+              )}
+
+              {/* Screen reader status */}
+              <p role="status" aria-live="polite" className="sr-only">
+                {isProcessing ? statusText || "Working…" : ""}
+              </p>
+
+              {/* AI Decomposition Review Modal */}
+              {draftDecomposition && (
+                <ReviewSubtasksModal
+                  open={isReviewOpen}
+                  masterTask={draftDecomposition.masterTask}
+                  masterTaskCID={draftDecomposition.masterTaskCID}
+                  masterObjective={draftDecomposition.masterObjective}
+                  successCriteria={draftDecomposition.successCriteria}
+                  budget={draftBudget}
+                  subtasks={draftDecomposition.subtasks}
+                  onConfirm={handleConfirmCreateTask}
+                  onCancel={handleCancelReview}
+                />
+              )}
+
+              {draftDecomposition && !isProcessing && (
+                <div className="rounded-lg border border-base-300 p-3 space-y-3">
+                  <p className="text-sm">
+                    {creationAttempt?.confirmed
+                      ? "Your project is funded. Update the project list to finish."
+                      : hasSubmittedTransaction
+                        ? "Your transaction was submitted. Check its status before trying again."
+                        : "Your generated subtasks and edits are kept on this page. Continue without running AI decomposition again."}
+                  </p>
+                  {!ownsDraft && <p className="text-xs">Reconnect {draftAccount} to continue this plan.</p>}
+                  {creationAttempt?.txHash && <p className="text-xs break-all">Transaction: {creationAttempt.txHash}</p>}
+                  <div className="flex flex-wrap gap-2">
+                    {!hasSubmittedTransaction && (
+                      <button type="button" className="btn btn-outline btn-sm" disabled={!ownsDraft}
+                        onClick={() => { setErrorText(""); setIsReviewOpen(true); }}>
+                        Review saved plan
+                      </button>
                     )}
-                  </button>
+                    {creationAttempt && (
+                      <button type="button" className="btn btn-neutral btn-sm" disabled={!ownsDraft}
+                        onClick={() => void handleConfirmCreateTask(creationAttempt.plan)}>
+                        {creationAttempt.confirmed ? "Update project list" : hasSubmittedTransaction ? "Check transaction status" : "Retry transaction"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
-                  {!validation.ok && account && !isProcessing && (
-                    <p
-                      id="submit-blocked-reason"
-                      className="text-[11px] text-base-content/60 text-center"
-                    >
-                      {validation.reason}
-                    </p>
+              {/* Submit CTA */}
+              <div className="pt-2 border-t border-base-300/60 space-y-2">
+                <button
+                  onClick={handleDecompose}
+                  disabled={isProcessing || hasSubmittedTransaction}
+                  aria-describedby={!validation.ok && account ? "submit-blocked-reason" : undefined}
+                  className="btn btn-neutral btn-block font-bold text-sm shadow-xs"
+                >
+                  {isProcessing ? (
+                    <span className="flex items-center gap-2">
+                      <span className="loading loading-spinner loading-xs" aria-hidden="true" />
+                      {statusText || "Decomposing & funding escrow…"}
+                    </span>
+                  ) : account ? (
+                    <span className="flex items-center gap-2">
+                      Request AI Decomposition
+                      <ArrowRight aria-hidden="true" className="w-4 h-4" />
+                    </span>
+                  ) : (
+                    "Connect Wallet to Post"
                   )}
+                </button>
 
-                  {validation.ok && !isProcessing && account && (
-                    <p className="text-[11px] text-base-content/60 text-center">
-                      Nothing is spent yet — you review the generated subtasks before any MON is
-                      escrowed.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+                {!validation.ok && account && !isProcessing && (
+                  <p
+                    id="submit-blocked-reason"
+                    className="text-[11px] text-base-content/60 text-center"
+                  >
+                    {validation.reason}
+                  </p>
+                )}
 
-          {/* Right Info Sidebar (1 col) */}
-          <div className="space-y-5">
-            <div className="card bg-base-100 border border-base-300/80 shadow-xs">
-              <div className="card-body p-5 gap-4">
-                <div className="flex items-center gap-2 text-sm font-bold text-base-content">
-                  <Sparkles aria-hidden="true" className="w-4 h-4 text-accent" />
-                  <span>How AI Decomposition Works</span>
-                </div>
-                <ul className="space-y-3 text-xs text-base-content/70 leading-relaxed">
-                  <li className="flex gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-base-200 border border-base-300 flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
-                      1
-                    </span>
-                    <span>Gemini analyzes your objective and breaks it into 3 to 5 independent subtasks.</span>
-                  </li>
-                  <li className="flex gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-base-200 border border-base-300 flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
-                      2
-                    </span>
-                    <span>
-                      You review and edit every subtask — objective, acceptance criteria and reward —
-                      before anything is signed.
-                    </span>
-                  </li>
-                  <li className="flex gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-base-200 border border-base-300 flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
-                      3
-                    </span>
-                    <span>
-                      Your MON is escrowed on Monad in one transaction and released per subtask as
-                      each deliverable clears verification.
-                    </span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="card bg-base-100 border border-base-300/80 shadow-xs">
-              <div className="card-body p-5 gap-3 text-xs text-base-content/60 leading-relaxed">
-                <div className="flex items-center gap-2 font-bold text-base-content">
-                  <Shield aria-hidden="true" className="w-4 h-4 text-success" />
-                  <span>How your budget is protected</span>
-                </div>
-                <p>
-                  Workers stake MON before claiming a subtask. If they submit invalid work or
-                  abandon the lease, their stake is slashed and the subtask reopens automatically.
-                </p>
-                <p>
-                  Work that passes AI verification is not paid out immediately — it waits 48 hours
-                  in a dispute window, so you can reject a weak deliverable before the MON is
-                  released.
-                </p>
+                {validation.ok && !isProcessing && account && (
+                  <p className="text-[11px] text-base-content/60 text-center">
+                    Nothing is spent yet — you review and adjust every subtask before any {currency} is escrowed.
+                  </p>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── MY PROJECTS TAB ─── */}
+      {/* ─── MY PROJECTS TAB (CLEAN, SCANNABLE TABLE) ─── */}
       {activeTab === "tasks" && (
         <div role="tabpanel" id="panel-tasks" aria-labelledby="tab-tasks" className="space-y-6">
-          {/* Search bar */}
+          {tasksError && <div className="alert alert-error" role="alert"><span>{tasksError}</span><button className="btn btn-sm" onClick={() => { if (account) void fetchCustomerTasks(account); }}>Retry</button></div>}
+          {/* Subtle KPI Summary Bar */}
+          {account && myTasks.length > 0 && (
+            <div className="customer-stats grid grid-cols-3 divide-x divide-base-300/80 rounded-xl border border-base-300/80 bg-base-100 shadow-xs mb-6">
+              <div className="p-4 sm:p-5">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-base-content/60">
+                  Escrowed
+                </div>
+                <div className="mt-1 font-mono text-xl sm:text-2xl font-bold text-base-content">
+                  {totalEscrowedETH} <span className="text-xs font-sans text-base-content/60">{currency}</span>
+                </div>
+              </div>
+              <div className="p-4 sm:p-5">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-base-content/60">
+                  Active Projects
+                </div>
+                <div className="mt-1 font-mono text-xl sm:text-2xl font-bold text-base-content">
+                  {activeCount}
+                </div>
+              </div>
+              <div className="p-4 sm:p-5">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-base-content/60">
+                  Completed
+                </div>
+                <div className="mt-1 font-mono text-xl sm:text-2xl font-bold text-success">
+                  {completedCount}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Search Filter Bar */}
           {myTasks.length > 0 && (
             <div className="flex justify-between items-center gap-4">
               <div className="relative max-w-sm w-full">
@@ -882,7 +747,7 @@ const CustomerDashboard = () => {
                 />
                 <input
                   type="search"
-                  placeholder="Filter your projects…"
+                  placeholder="Filter projects…"
                   aria-label="Filter your projects by description"
                   className="input input-sm input-bordered w-full pl-9 text-xs"
                   value={searchFilter}
@@ -893,23 +758,23 @@ const CustomerDashboard = () => {
           )}
 
           {!account ? (
-            <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
-              <div className="max-w-md mx-auto space-y-4">
+            <div className="card bg-base-100 border border-base-300/80 p-12 text-center max-w-md mx-auto">
+              <div className="space-y-4">
                 <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/60">
                   <Coins className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-base-content">Connect Wallet</h3>
+                <h3 className="text-base font-bold text-base-content">Connect Wallet</h3>
                 <p className="text-xs text-base-content/60 leading-relaxed">
-                  Connect your Web3 wallet to view and manage your active task escrows on Monad.
+                  Connect your Web3 wallet to manage your project escrows on Ethereum.
                 </p>
                 <button onClick={connectWallet} className="btn btn-neutral btn-sm font-semibold">
                   Connect Wallet
                 </button>
               </div>
             </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="card bg-base-100 border border-base-300/80 p-12 text-center">
-              <div className="max-w-md mx-auto space-y-4">
+          ) : tasksLoading ? <PageLoading label="Loading your projects..." /> : tasksError && !myTasks.length ? <div className="workspace-empty"><h3>Projects are unavailable</h3><p>Retry above to load the latest project information.</p></div> : filteredTasks.length === 0 ? (
+            <div className="card bg-base-100 border border-base-300/80 p-12 text-center max-w-md mx-auto">
+              <div className="space-y-4">
                 <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center mx-auto text-base-content/60">
                   <Layers className="w-6 h-6" />
                 </div>
@@ -924,100 +789,110 @@ const CustomerDashboard = () => {
                 <button
                   onClick={() => {
                     setSearchFilter("");
-                    setActiveTab("create");
+                    if (!searchFilter) setActiveTab("create");
                   }}
                   className="btn btn-neutral btn-sm font-semibold"
                 >
-                  Create Your First Project
+                  {searchFilter ? "Clear search" : "Create Your First Project"}
                 </button>
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {filteredTasks.map((task) => {
-                const verifiedCount = task.subtasks.filter(
-                  (st: any) => st.state === "VERIFIED"
-                ).length;
-                const totalCount = task.subtasks.length;
-                const pct = totalCount > 0 ? (verifiedCount / totalCount) * 100 : 0;
-                const isComplete = totalCount > 0 && verifiedCount === totalCount;
-                const headline = taskHeadline(task);
+            <div className="overflow-hidden rounded-xl border border-base-300/80 bg-base-100 shadow-xs">
+              <table className="responsive-records w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-base-300/80 bg-base-200/50 text-[11px] uppercase tracking-wider text-base-content/60">
+                    <th className="px-5 py-3 font-semibold">Project</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 font-semibold">Subtasks</th>
+                    <th className="px-4 py-3 font-semibold">Escrow</th>
+                    <th className="px-4 py-3 font-semibold text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-base-300/60">
+                  {filteredTasks.map((task) => {
+                    const verifiedCount = task.subtasks?.filter(
+                      (st: any) => st.state === "VERIFIED"
+                    ).length || 0;
+                    const totalCount = task.subtasks?.length || 0;
+                    const pct = totalCount > 0 ? (verifiedCount / totalCount) * 100 : 0;
+                    const headline = taskHeadline(task);
+                    const isTaskCancelled = isCancelled(task);
+                    const status = deriveTaskStatus(task.subtasks, task.status);
 
-                return (
-                  <Link
-                    to={`/task/${task.taskId}`}
-                    key={task.taskId}
-                    className="card bg-base-100 border border-base-300/80 hover:border-base-content/30 hover:shadow-md transition-all group"
-                  >
-                    <div className="card-body p-5 gap-4">
-                      {/* Top row */}
-                      <div className="flex justify-between items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[10px] font-mono text-base-content/60 uppercase block mb-1">
-                            ID: #{task.taskId?.slice(0, 8)}
-                          </span>
-                          <h3
-                            className={`text-sm leading-snug line-clamp-2 transition-colors ${
+                    return (
+                      <tr key={task.taskId} className="hover:bg-base-200/40 transition-colors group">
+                        <td className="px-5 py-4 max-w-xs md:max-w-md">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono text-[10px] text-base-content/60 uppercase">
+                              #{task.taskId?.slice(0, 8)}
+                            </span>
+                          </div>
+                          <Link
+                            to={`/task/${task.taskId}`}
+                            className={`text-sm font-semibold line-clamp-1 group-hover:text-primary transition-colors ${
                               headline.isPlaceholder
                                 ? "italic font-normal text-base-content/60"
-                                : "font-semibold text-base-content group-hover:text-primary"
+                                : "text-base-content"
                             }`}
                             title={headline.isPlaceholder ? MISSING_BRIEF_HINT : undefined}
                           >
                             {headline.text}
-                          </h3>
-                        </div>
-                        <span className="badge badge-neutral font-mono font-bold text-xs shrink-0">
-                          {Number(task.budget).toFixed(2)} MON
-                        </span>
-                      </div>
+                          </Link>
+                        </td>
 
-                      {/* Progress Bar */}
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs text-base-content/60">
-                          <span>
-                            {verifiedCount} of {totalCount} subtasks completed
+                        <td data-label="Status" className="px-4 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 text-xs text-base-content/80 font-medium">
+                            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+                            {status.label}
                           </span>
-                          <span className="font-mono font-semibold">{pct.toFixed(0)}%</span>
-                        </div>
-                        <progress
-                          className={`progress w-full h-1.5 ${
-                            isComplete ? "progress-success" : "progress-primary"
-                          }`}
-                          value={pct}
-                          max={100}
-                        />
-                      </div>
+                        </td>
 
-                      {/* Subtask Status Chips */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-base-300/60">
-                        <div className="flex flex-wrap gap-1.5">
-                          {task.subtasks.slice(0, 3).map((st: any) => {
-                            const badge = BADGE_MAP[st.state] || { label: st.state, cls: "badge-ghost" };
-                            return (
-                              <span
-                                key={st.subtaskId}
-                                className={`badge badge-xs ${badge.cls} font-mono`}
-                              >
-                                {badge.label}
+                        <td data-label="Delivery" className="px-4 py-4 whitespace-nowrap">
+                          {isTaskCancelled ? (
+                            <span className="text-xs text-base-content/50 italic">Cancelled</span>
+                          ) : (
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-20 h-1.5 rounded-full bg-base-300/80 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${pct === 100 ? "bg-success" : "bg-primary"}`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                              <span className="font-mono text-xs text-base-content/70">
+                                {verifiedCount}/{totalCount}
                               </span>
-                            );
-                          })}
-                          {task.subtasks.length > 3 && (
-                            <span className="badge badge-xs badge-ghost font-mono">
-                              +{task.subtasks.length - 3} more
-                            </span>
+                            </div>
                           )}
-                        </div>
+                        </td>
 
-                        <span className="text-xs font-semibold text-base-content/60 group-hover:text-base-content flex items-center gap-1">
-                          View Graph <ArrowRight className="w-3.5 h-3.5" />
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
+                        <td data-label="Escrow" className="px-4 py-4 whitespace-nowrap font-mono text-xs font-semibold text-base-content">
+                          {isTaskCancelled ? (
+                            <span className="text-base-content/50">
+                              <span className="line-through">{Number(task.budget).toFixed(2)} {currency}</span>
+                              <span className="no-underline text-[10px] ml-1.5 font-sans font-normal text-success">
+                                Refunded
+                              </span>
+                            </span>
+                          ) : (
+                            <span>{Number(task.budget).toFixed(2)} {currency}</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 whitespace-nowrap text-right">
+                          <Link
+                            to={`/task/${task.taskId}`}
+                            className="btn btn-ghost btn-xs text-xs font-medium gap-1 text-base-content/70 group-hover:text-base-content"
+                          >
+                            <span>Open</span>
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -1027,7 +902,3 @@ const CustomerDashboard = () => {
 };
 
 export default CustomerDashboard;
-
-
-
-

@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import { prisma } from "../db/client";
 import { getSpecDraft } from "./spec";
 import dotenv from "dotenv";
+import { getDeployments } from "./deployments";
 
 dotenv.config();
 
@@ -13,26 +14,59 @@ const TASK_MANAGER_ABI = [
   "event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId, bool slashed)",
   "event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, bytes32 submissionHash)",
   "event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score, uint256 disputeDeadline)",
+  "event SubtaskVerificationFailed(bytes32 indexed taskId, bytes32 indexed subtaskId, uint8 score)",
   "event PayoutReleased(bytes32 indexed taskId, bytes32 indexed subtaskId, address worker)",
-  "event DisputeRaised(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed creator)",
+  "event DisputeRaised(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker)",
   "event DisputeResolved(bytes32 indexed taskId, bytes32 indexed subtaskId, bool workerWins)",
   "event ReputationUpdated(address indexed worker, int256 newScore, uint256 successfulTasks, uint256 failedTasks)"
 ];
 
-/// The Monad public RPC rejects `eth_getLogs` ranges wider than 100 blocks, and
-/// backfilling after downtime can span thousands, so every scan is chunked.
+/// Public RPCs often cap eth_getLogs ranges, and backfilling after downtime
+/// can span thousands of blocks, so every scan is chunked.
 const MAX_BLOCK_SPAN = Number(process.env.CHAIN_MAX_BLOCK_SPAN || 99);
 const POLL_INTERVAL_MS = Number(process.env.CHAIN_POLL_INTERVAL_MS || 5000);
 
 function getProvider() {
-  const rpcUrl = process.env.MONAD_RPC_URL;
+  const rpcUrl =
+    process.env.ETH_RPC_URL ||
+    process.env.ETHEREUM_RPC_URL ||
+    process.env.RPC_URL ||
+    process.env.MONAD_RPC_URL;
   if (!rpcUrl) return null;
   return new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
+}
+
+export async function isTaskManagerAdmin(address: string): Promise<boolean> {
+  const provider = getProvider();
+  if (!provider) return false;
+  for (const deployment of getDeployments()) {
+    try {
+      const contract = new ethers.Contract(
+        deployment.taskManagerAddress,
+        ["function admin() view returns (address)"],
+        provider
+      );
+      if (String(await contract.admin()).toLowerCase() === address.toLowerCase()) return true;
+    } catch {
+      // Ignore deployments that are not available from the configured RPC.
+    }
+  }
+  return false;
 }
 
 export function getTaskManagerInterface() {
   return new ethers.Interface(TASK_MANAGER_ABI);
 }
+
+const subtaskIdFilter = (id: any) => ({
+  equals: String(id),
+  mode: "insensitive" as const
+});
+
+const taskIdFilter = (id: any) => ({
+  equals: String(id),
+  mode: "insensitive" as const
+});
 
 /// Pushes an AGGREGATE job once every subtask on a task has reached a final,
 /// paid-out state (VERIFIED via releasePayout or a worker-won dispute).
@@ -60,7 +94,7 @@ async function maybeQueueAggregate(taskId: string) {
 export async function applyEvent(
   eventName: string,
   args: readonly any[],
-  meta: { blockNumber?: number } = {}
+  meta: { blockNumber?: number; transactionHash?: string; contractAddress?: string; escrowAddress?: string } = {}
 ): Promise<void> {
   switch (eventName) {
     case "TaskCreated": {
@@ -71,7 +105,10 @@ export async function applyEvent(
         where: { taskId },
         update: {
           status: "ACTIVE",
+          contractAddress: meta.contractAddress,
+          escrowAddress: meta.escrowAddress,
           blockNumber: meta.blockNumber ?? undefined,
+          txHash: meta.transactionHash ?? undefined,
           ...(spec
             ? { objective: spec.objective, successCriteria: spec.acceptanceCriteria }
             : {})
@@ -79,10 +116,13 @@ export async function applyEvent(
         create: {
           taskId,
           creator,
+          contractAddress: meta.contractAddress,
+          escrowAddress: meta.escrowAddress,
           description,
           budget: ethers.formatEther(budget),
           status: "ACTIVE",
           blockNumber: meta.blockNumber ?? null,
+          txHash: meta.transactionHash ?? null,
           objective: spec?.objective ?? null,
           successCriteria: spec?.acceptanceCriteria ?? []
         }
@@ -92,10 +132,10 @@ export async function applyEvent(
 
     case "TaskCancelled": {
       const [taskId, , refundedAmount] = args;
-      console.log(`Event TaskCancelled: ${taskId}, refunded: ${ethers.formatEther(refundedAmount)} MON`);
-      await prisma.task.updateMany({ where: { taskId }, data: { status: "CANCELLED" } });
+      console.log(`Event TaskCancelled: ${taskId}, refunded: ${ethers.formatEther(refundedAmount)} ETH`);
+      await prisma.task.updateMany({ where: { taskId: taskIdFilter(taskId) }, data: { status: "CANCELLED" } });
       await prisma.subtask.updateMany({
-        where: { taskId, state: "CREATED" },
+        where: { taskId: taskIdFilter(taskId), state: "CREATED" },
         data: { state: "CANCELLED" }
       });
       break;
@@ -138,9 +178,9 @@ export async function applyEvent(
 
     case "SubtaskClaimed": {
       const [, subtaskId, worker, bondAmount] = args;
-      console.log(`Event SubtaskClaimed: ${subtaskId} by ${worker} (bond: ${ethers.formatEther(bondAmount)} MON)`);
+      console.log(`Event SubtaskClaimed: ${subtaskId} by ${worker} (bond: ${ethers.formatEther(bondAmount)} ETH)`);
       await prisma.subtask.updateMany({
-        where: { subtaskId },
+        where: { subtaskId: subtaskIdFilter(subtaskId) },
         data: { state: "CLAIMED", worker, bondAmount: ethers.formatEther(bondAmount) }
       });
       break;
@@ -150,8 +190,8 @@ export async function applyEvent(
       const [, subtaskId, slashed] = args;
       console.log(`Event ClaimForfeited: ${subtaskId} (slashed: ${slashed})`);
       await prisma.subtask.updateMany({
-        where: { subtaskId },
-        data: { state: "CREATED", worker: null, bondAmount: null }
+        where: { subtaskId: subtaskIdFilter(subtaskId) },
+        data: { state: "CREATED", worker: null, bondAmount: null, submissionHash: null }
       });
       break;
     }
@@ -160,7 +200,7 @@ export async function applyEvent(
       const [, subtaskId, submissionCID] = args;
       console.log(`Event SubmissionProofRecorded: ${subtaskId} (CID: ${submissionCID})`);
       await prisma.subtask.updateMany({
-        where: { subtaskId },
+        where: { subtaskId: subtaskIdFilter(subtaskId) },
         data: { state: "SUBMITTED", submissionHash: submissionCID }
       });
 
@@ -182,25 +222,31 @@ export async function applyEvent(
     }
 
     case "SubtaskVerified": {
-      // `passed` here only reflects the AI's verdict, NOT a final payout — a pass moves the
-      // subtask into PENDING_RELEASE, where it sits for 48h so the creator can dispute it.
+      // The active deployment pays in this transaction and has no waiting period.
       const [, subtaskId, passed, score, disputeDeadline] = args;
+      if (Number(disputeDeadline) !== 0) throw new Error("Delayed payouts are not supported by the active deployment");
       console.log(`Event SubtaskVerified: ${subtaskId} (passed: ${passed})`);
       await prisma.subtask.updateMany({
-        where: { subtaskId },
+        where: { subtaskId: subtaskIdFilter(subtaskId) },
         data: passed
           ? {
-              state: "PENDING_RELEASE",
+              state: "VERIFIED",
               qualityScore: Number(score),
-              disputeDeadline: new Date(Number(disputeDeadline) * 1000)
+              disputeDeadline: null
             }
           : {
-              state: "CREATED",
-              worker: null,
-              bondAmount: null,
-              submissionHash: null,
+              state: "VERIFICATION_FAILED",
               qualityScore: Number(score)
             }
+      });
+      break;
+    }
+
+    case "SubtaskVerificationFailed": {
+      const [, subtaskId, score] = args;
+      await prisma.subtask.updateMany({
+        where: { subtaskId: subtaskIdFilter(subtaskId) },
+        data: { state: "VERIFICATION_FAILED", qualityScore: Number(score), disputeDeadline: null }
       });
       break;
     }
@@ -209,8 +255,8 @@ export async function applyEvent(
       const [taskId, subtaskId, worker] = args;
       console.log(`Event PayoutReleased: ${subtaskId} to ${worker}`);
       await prisma.subtask.updateMany({
-        where: { subtaskId },
-        data: { state: "VERIFIED", bondAmount: null }
+        where: { subtaskId: subtaskIdFilter(subtaskId) },
+        data: { state: "VERIFIED", bondAmount: null, disputeDeadline: null, payoutTxHash: meta.transactionHash ?? undefined }
       });
       await maybeQueueAggregate(taskId);
       break;
@@ -219,8 +265,8 @@ export async function applyEvent(
     case "DisputeRaised": {
       const [taskId, subtaskId, creator] = args;
       console.log(`Event DisputeRaised: ${subtaskId} by ${creator}`);
-      await prisma.subtask.updateMany({ where: { subtaskId }, data: { state: "IN_DISPUTE" } });
-      await prisma.task.updateMany({ where: { taskId }, data: { status: "IN_DISPUTE" } });
+      await prisma.subtask.updateMany({ where: { subtaskId: subtaskIdFilter(subtaskId) }, data: { state: "IN_DISPUTE" } });
+      await prisma.task.updateMany({ where: { taskId: taskIdFilter(taskId) }, data: { status: "IN_DISPUTE" } });
       break;
     }
 
@@ -228,11 +274,11 @@ export async function applyEvent(
       const [taskId, subtaskId, workerWins] = args;
       console.log(`Event DisputeResolved: ${subtaskId} (workerWins: ${workerWins})`);
       await prisma.subtask.updateMany({
-        where: { subtaskId },
+        where: { subtaskId: subtaskIdFilter(subtaskId) },
         data: {
           state: workerWins ? "VERIFIED" : "REJECTED",
           bondAmount: null,
-          worker: workerWins ? undefined : null
+          payoutTxHash: workerWins ? meta.transactionHash ?? undefined : undefined
         }
       });
 
@@ -240,12 +286,12 @@ export async function applyEvent(
       const task = await prisma.task.findUnique({ where: { taskId }, include: { subtasks: true } });
       if (task && !task.subtasks.some((st) => st.state === "IN_DISPUTE")) {
         await prisma.task.updateMany({
-          where: { taskId, status: "IN_DISPUTE" },
+          where: { taskId: taskIdFilter(taskId), status: "IN_DISPUTE" },
           data: { status: "ACTIVE" }
         });
       }
 
-      if (workerWins) await maybeQueueAggregate(taskId);
+      await maybeQueueAggregate(taskId);
       break;
     }
 
@@ -281,7 +327,7 @@ export async function syncTransaction(txHash: string): Promise<{ indexed: number
   const provider = getProvider();
   const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
   if (!provider || !taskManagerAddress) {
-    throw new Error("Chain sync unavailable: MONAD_RPC_URL or TASKMANAGER_ADDRESS missing");
+    throw new Error("Chain sync unavailable: ETH_RPC_URL (or RPC_URL/MONAD_RPC_URL) or TASKMANAGER_ADDRESS missing");
   }
 
   const receipt = await provider.getTransactionReceipt(txHash);
@@ -289,12 +335,13 @@ export async function syncTransaction(txHash: string): Promise<{ indexed: number
   if (receipt.status !== 1) throw new Error("Transaction reverted on-chain");
 
   const iface = getTaskManagerInterface();
-  const target = taskManagerAddress.toLowerCase();
+  const deployments = new Map(getDeployments().map((item) => [item.taskManagerAddress.toLowerCase(), item]));
   const taskIds = new Set<string>();
   let indexed = 0;
 
   for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== target) continue;
+    const deployment = deployments.get(log.address.toLowerCase());
+    if (!deployment) continue;
     let parsed;
     try {
       parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
@@ -303,7 +350,7 @@ export async function syncTransaction(txHash: string): Promise<{ indexed: number
     }
     if (!parsed) continue;
 
-    await applyEvent(parsed.name, parsed.args, { blockNumber: receipt.blockNumber });
+    await applyEvent(parsed.name, parsed.args, { blockNumber: receipt.blockNumber, transactionHash: txHash, contractAddress: deployment.taskManagerAddress, escrowAddress: deployment.escrowAddress });
     indexed++;
     if (parsed.name === "TaskCreated" || parsed.name === "SubtaskCreated") {
       taskIds.add(String(parsed.args[0]));
@@ -313,14 +360,13 @@ export async function syncTransaction(txHash: string): Promise<{ indexed: number
   return { indexed, taskIds: [...taskIds] };
 }
 
-async function loadCursor(contractAddress: string, currentBlock: number): Promise<number> {
+async function loadCursor(contractAddress: string, currentBlock: number, startBlock: number): Promise<number> {
   const id = contractAddress.toLowerCase();
   const existing = await prisma.chainCursor.findUnique({ where: { id } });
   if (existing) return existing.lastBlock;
 
   // First ever boot: start from the configured deployment block so historic tasks
   // are backfilled, falling back to a short lookback if it is not configured.
-  const startBlock = Number(process.env.CHAIN_START_BLOCK || 0);
   const initial = startBlock > 0 ? startBlock - 1 : Math.max(0, currentBlock - 200);
   await prisma.chainCursor.create({ data: { id, lastBlock: initial } });
   return initial;
@@ -340,10 +386,12 @@ export async function setupChainListeners() {
   const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
 
   if (!provider || !taskManagerAddress) {
-    console.warn("Chain listeners skipped: MONAD_RPC_URL or TASKMANAGER_ADDRESS missing.");
+    console.warn("Chain listeners skipped: ETH_RPC_URL (or RPC_URL/MONAD_RPC_URL) or TASKMANAGER_ADDRESS missing.");
     return;
   }
 
+  for (const deployment of getDeployments()) {
+  const { taskManagerAddress } = deployment;
   const contract = new ethers.Contract(taskManagerAddress, TASK_MANAGER_ABI, provider);
   console.log("Starting chain polling with a durable block cursor...");
 
@@ -356,19 +404,23 @@ export async function setupChainListeners() {
     running = true;
     try {
       const currentBlock = await provider.getBlockNumber();
-      let cursor = await loadCursor(taskManagerAddress, currentBlock);
+      // Keep 1 block behind the reported head to prevent public RPC load-balancer head desync
+      const safeBlock = Math.max(0, currentBlock - 1);
+      let cursor = await loadCursor(taskManagerAddress, safeBlock, deployment.startBlock);
 
-      while (cursor < currentBlock) {
+      while (cursor < safeBlock) {
         const from = cursor + 1;
-        const to = Math.min(from + MAX_BLOCK_SPAN - 1, currentBlock);
+        const to = Math.min(from + MAX_BLOCK_SPAN - 1, safeBlock);
 
         const events = await contract.queryFilter("*", from, to);
         for (const event of events) {
           if (!("eventName" in event) || !event.eventName) continue;
           try {
-            await applyEvent(event.eventName, event.args, { blockNumber: event.blockNumber });
+            await applyEvent(event.eventName, event.args, { contractAddress: deployment.taskManagerAddress, escrowAddress: deployment.escrowAddress, blockNumber: event.blockNumber, transactionHash: ("transactionHash" in event ? event.transactionHash : undefined) });
           } catch (dbError) {
             console.error("DB Update Error during event sync:", dbError);
+            // Keep the cursor before this range so failed events are retried.
+            throw dbError;
           }
         }
 
@@ -385,5 +437,6 @@ export async function setupChainListeners() {
     }
   };
 
-  tick();
+  void tick();
+  }
 }

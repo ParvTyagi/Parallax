@@ -11,7 +11,7 @@ contract ParallaxEscrow {
     mapping(bytes32 => uint256) public escrowBalances;
     // subtaskId => paid
     mapping(bytes32 => bool) public subtaskPaid;
-    // worker => bonded MON currently locked against claimed subtasks
+    // worker => bonded ETH currently locked against claimed subtasks
     mapping(address => uint256) public workerBonds;
 
     event Deposited(bytes32 indexed taskId, uint256 amount);

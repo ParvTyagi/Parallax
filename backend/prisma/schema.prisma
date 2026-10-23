@@ -23,6 +23,7 @@ enum SubtaskState {
   SUBMITTED
   AWAITING_VERIFICATION
   PENDING_RELEASE
+  VERIFICATION_FAILED
   IN_DISPUTE
   VERIFIED
   REJECTED
@@ -33,6 +34,8 @@ model Task {
   id          String     @id @default(uuid())
   taskId      String     @unique
   creator     String
+  contractAddress String?
+  escrowAddress   String?
   description String
   budget      String
   status      TaskStatus @default(PENDING)
@@ -45,6 +48,7 @@ model Task {
 
   // Block the TaskCreated event was seen in — lets the UI show indexing lag.
   blockNumber Int?
+  txHash      String?
 
   subtasks    Subtask[]
 
@@ -58,7 +62,7 @@ model Subtask {
   rangeLabel      String
   description     String
   reward          String
-  bondAmount      String?      // MON bonded by the claiming worker
+  bondAmount      String?      // ETH bonded by the claiming worker
   leaseDuration   Int?         // dynamic lease in seconds
   worker          String?
   state           SubtaskState @default(CREATED)
@@ -68,6 +72,7 @@ model Subtask {
   aiRationale     String?      @db.Text
   aiFlags         String[]     @default([])
   disputeDeadline DateTime?
+  payoutTxHash    String?
   createdAt       DateTime     @default(now())
 
   // Structured spec (hydrated from SpecDraft via the description CID).

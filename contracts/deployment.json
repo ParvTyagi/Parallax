@@ -1,0 +1,22 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "state": "verified",
+  "taskManagerAddress": "0xF5C1243881729C16882EA7bbE0a1846e12553EfA",
+  "deploymentTxHash": "0x156abecd64354ba8f3c5eae9bac9c49f35deedd64aa4f3dea9c7bf5b0a48767e",
+  "deployerAddress": "0xf302D2f179baf42d6F02E337B25Cf882499b39e6",
+  "previousTaskManagerAddress": "0xD38828703153C697Bb4512553C0b0A2aD658a108",
+  "previousEscrowAddress": "0xa3C133deEa4FF4eb7dD442524d5CC3ddcCdd956A",
+  "previousStartBlock": 11960500,
+  "orchestratorAddress": "0xf302D2f179baf42d6F02E337B25Cf882499b39e6",
+  "platformTreasury": "0xf302D2f179baf42d6F02E337B25Cf882499b39e6",
+  "adminAddress": "0xf302D2f179baf42d6F02E337B25Cf882499b39e6",
+  "workerBondAmount": "1000000000000000",
+  "platformFeePercentage": "5",
+  "maxDeploymentCostETH": "0.00000003513938736",
+  "escrowAddress": "0xdF16FC24b9b137B3bB25F2b7A659b1B068bE834e",
+  "startBlock": 11967798,
+  "deployedAt": "2026-10-22T06:48:42.265Z",
+  "deploymentGasUsed": "21842638",
+  "deploymentCostETH": "0.00000002872306897"
+}

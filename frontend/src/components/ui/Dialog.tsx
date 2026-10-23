@@ -24,16 +24,30 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onOpenAutoFocus, onCloseAutoFocus, ...props }, ref) => {
+  const opener = React.useRef<HTMLElement | null>(null);
+  return (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
+      data-theme="parallax"
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 scale-95 opacity-0 rounded-box border border-base-300 bg-base-100 p-6 shadow-xl transition-[opacity,transform] duration-150 focus:outline-none data-[state=open]:scale-100 data-[state=open]:opacity-100 motion-reduce:transition-none max-h-[85vh] overflow-y-auto",
+        "product-dialog fixed left-1/2 top-1/2 z-50 w-[calc(100%_-_2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 scale-95 opacity-0 rounded-box border border-base-300 bg-base-100 p-6 shadow-xl transition-[opacity,transform] duration-150 focus:outline-none data-[state=open]:scale-100 data-[state=open]:opacity-100 motion-reduce:transition-none max-h-[85vh] overflow-y-auto",
         className
       )}
       {...props}
+      onOpenAutoFocus={event => {
+        opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        onOpenAutoFocus?.(event);
+      }}
+      onCloseAutoFocus={event => {
+        onCloseAutoFocus?.(event);
+        if (!event.defaultPrevented && opener.current?.isConnected) {
+          event.preventDefault();
+          opener.current.focus({ preventScroll: true });
+        }
+      }}
     >
       {children}
       <DialogPrimitive.Close className="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
@@ -42,7 +56,8 @@ const DialogContent = React.forwardRef<
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
-))
+  );
+})
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
@@ -51,7 +66,7 @@ const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 DialogHeader.displayName = "DialogHeader"
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex justify-end gap-2 mt-6", className)} {...props} />
+  <div className={cn("dialog-footer", className)} {...props} />
 )
 DialogFooter.displayName = "DialogFooter"
 

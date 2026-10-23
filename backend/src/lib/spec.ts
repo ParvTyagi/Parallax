@@ -183,6 +183,6 @@ export function coerceSubtaskSpec(raw: any, fallbackReward: number): SubtaskSpec
     estimatedMinutes: Number(raw?.estimatedMinutes) > 0 ? Math.round(Number(raw.estimatedMinutes)) : undefined,
     reward: Number(raw?.reward) > 0 ? Number(raw.reward) : fallbackReward,
     leaseDuration:
-      Number(raw?.leaseDuration) > 0 ? Math.round(Number(raw.leaseDuration)) : 1800
+      Math.max(3600, Number(raw?.leaseDuration) > 0 ? Math.round(Number(raw.leaseDuration)) : 3600)
   };
 }

@@ -1,94 +1,82 @@
+import { PageLoading, PageError } from "../components/ui/PageState";
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useWeb3 } from "../contexts/Web3Context";
-import { API_URL } from "../lib/constants";
+import { API_URL, BLOCK_EXPLORER_URL } from "../lib/constants";
 import { subtaskHeadline } from "../components/task/SubtaskSpec";
 import {
   ExternalLink,
   Copy,
   Check,
   ArrowRight,
-  User,
 } from "lucide-react";
 
 const STATE_BADGE: Record<string, { label: string; cls: string }> = {
   OPEN:            { label: "OPEN", cls: "badge-info" },
   CLAIMED:         { label: "CLAIMED", cls: "badge-warning" },
   SUBMITTED:       { label: "SUBMITTED", cls: "badge-secondary" },
-  PENDING_RELEASE: { label: "DISPUTE WINDOW", cls: "badge-warning" },
   IN_DISPUTE:      { label: "IN DISPUTE", cls: "badge-error" },
   VERIFIED:        { label: "VERIFIED", cls: "badge-success" },
   FAILED:          { label: "FAILED", cls: "badge-error" },
+  VERIFICATION_FAILED: { label: "VERIFICATION FAILED", cls: "badge-error" },
   REJECTED:        { label: "REJECTED", cls: "badge-error" },
 };
 
 const WorkerProfile = () => {
   const { address } = useParams<{ address: string }>();
-  const { account } = useWeb3();
+  const { account, currencySymbol } = useWeb3();
+  const currency = currencySymbol || "ETH";
   const [profile, setProfile] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  const [copyError, setCopyError] = useState("");
   const [copied, setCopied] = useState(false);
   const [filterState, setFilterState] = useState<string>("ALL");
 
   const isMe = account?.toLowerCase() === address?.toLowerCase();
 
   useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
     const fetchProfile = async () => {
       try {
-        setLoading(true);
-        const res = await fetch(`${API_URL}/api/workers/${address}`);
+        setLoading(true); setError(""); setProfile(null); setHistory([]);
+        const res = await fetch(`${API_URL}/api/workers/${address}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(res.status === 404 ? "This address has no worker profile yet." : "We could not load this profile. Please try again.");
         if (res.ok) {
           const data = await res.json();
+          if (cancelled) return;
           setProfile(data.profile);
           setHistory(data.claimedSubtasks || []);
         }
       } catch (e) {
-        console.error(e);
+        if (!cancelled) setError(e instanceof Error ? e.message : "Profile unavailable. Please try again.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     if (address) fetchProfile();
-  }, [address]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [address, refresh]);
 
-  const copyAddress = () => {
+  const copyAddress = async () => {
     if (!address) return;
-    navigator.clipboard.writeText(address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true); setCopyError("");
+      setTimeout(() => setCopied(false), 2000);
+    } catch { setCopyError("Could not copy the address. Select it from the explorer link."); }
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-80 gap-3">
-        <span className="loading loading-spinner loading-md text-primary" />
-        <span className="text-xs text-base-content/60 font-medium">Loading worker profile…</span>
-      </div>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <div className="card bg-base-100 border border-base-300/80 p-12 text-center max-w-md mx-auto mt-12">
-        <div className="space-y-3">
-          <User className="w-8 h-8 text-base-content/60 mx-auto" />
-          <h3 className="text-base font-bold text-base-content">Worker Profile Not Found</h3>
-          <p className="text-xs text-base-content/60 font-mono">
-            {address}
-          </p>
-          <Link to="/worker" className="btn btn-neutral btn-sm">
-            Back to Marketplace
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <PageLoading label="Loading contributor profile…" />;
+  if (!profile) return <PageError title={error ? "Profile unavailable" : "No contribution history yet"} message={error || "This address has not contributed to a project yet."} onRetry={() => setRefresh(v => v + 1)}><Link className="btn btn-outline" to="/worker">Explore work</Link></PageError>;
 
   const totalCompleted = Number(profile.successfulTasks || 0);
   const totalFailed = Number(profile.failedTasks || 0);
   const totalTasks = totalCompleted + totalFailed;
-  const successRate = totalTasks > 0 ? ((totalCompleted / totalTasks) * 100).toFixed(0) : "100";
+  const successRate = totalTasks > 0 ? ((totalCompleted / totalTasks) * 100).toFixed(0) : null;
 
   const filteredHistory = history.filter((st) => {
     if (filterState === "ALL") return true;
@@ -96,23 +84,26 @@ const WorkerProfile = () => {
   });
 
   return (
-    <div className="animate-in fade-in duration-300 pb-20 space-y-8">
+    <div className="profile-page animate-in fade-in duration-300 pb-20 space-y-8">
+      <div className="product-page-heading"><p className="eyebrow">Contributor identity</p><h1>{isMe ? "Your contribution, in focus." : "A record of meaningful work."}</h1><p>Verified deliveries, reputation, and an on-chain work history.</p></div>
+      {copyError && <p role="alert" className="alert alert-error">{copyError}</p>}
+      <span role="status" className="sr-only">{copied ? "Address copied" : ""}</span>
       {/* ─── Profile Hero Card ─── */}
       <div className="card bg-base-100 border border-base-300/80 shadow-xs">
         <div className="card-body p-6 md:p-8">
-          <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
+          <div className="profile-identity">
             <div className="flex flex-col md:flex-row items-center md:items-start gap-5 text-center md:text-left">
               {/* Avatar Identicon */}
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-500 to-amber-400 text-white font-mono font-extrabold text-xl flex items-center justify-center shadow-xs shrink-0">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white font-mono font-extrabold text-xl flex items-center justify-center shadow-xs shrink-0">
                 {address?.slice(2, 4).toUpperCase()}
               </div>
 
               {/* Identity Info */}
               <div className="space-y-1.5">
                 <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                  <h1 className="text-lg md:text-xl font-bold font-mono text-base-content">
+                  <h2 className="text-lg md:text-xl font-bold font-mono text-base-content">
                     {address?.slice(0, 8)}…{address?.slice(-6)}
-                  </h1>
+                  </h2>
                   {isMe && (
                     <span className="badge badge-success badge-sm font-semibold">
                       Connected Wallet
@@ -120,7 +111,7 @@ const WorkerProfile = () => {
                   )}
                   {profile.reputationScore >= 80 && (
                     <span className="badge badge-warning badge-sm font-bold font-mono">
-                      TOP 10%
+                      HIGH REPUTATION
                     </span>
                   )}
                 </div>
@@ -142,12 +133,12 @@ const WorkerProfile = () => {
             {/* Actions */}
             <div className="flex items-center gap-2.5">
               <a
-                href={`https://testnet.monadexplorer.com/address/${address}`}
+                href={`${BLOCK_EXPLORER_URL}/address/${address}`}
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-sm btn-outline border-base-300 text-xs font-semibold gap-1.5"
               >
-                <span>Monad Explorer</span>
+                <span>View on explorer</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
@@ -156,7 +147,7 @@ const WorkerProfile = () => {
       </div>
 
       {/* ─── Metric KPI Cards ─── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="profile-metrics">
         <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-4 md:p-5">
             <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
@@ -199,16 +190,16 @@ const WorkerProfile = () => {
               Success Rate
             </span>
             <div className="text-2xl font-bold font-mono text-base-content">
-              {successRate}%
+              {successRate === null ? "—" : `${successRate}%`}
             </div>
             <span className="text-[11px] text-base-content/60">Pass percentage</span>
           </div>
         </div>
 
-        <div className="card bg-base-100 border border-base-300/80 shadow-xs col-span-2 lg:col-span-1">
+        <div className="card bg-base-100 border border-base-300/80 shadow-xs">
           <div className="card-body p-4 md:p-5">
             <span className="text-[10px] font-bold text-base-content/60 uppercase tracking-wider block mb-1">
-              Bonded (MON)
+              Bonded ({currency})
             </span>
             <div className="text-2xl font-bold font-mono text-base-content">
               {Number(profile.activeBondTotal || 0).toFixed(2)}
@@ -221,20 +212,21 @@ const WorkerProfile = () => {
       {/* ─── Task History Table ─── */}
       <div className="card bg-base-100 border border-base-300/80 shadow-xs">
         <div className="card-body p-6 gap-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="history-heading">
             <div>
-              <h2 className="text-base font-bold text-base-content">Task History & Deliverables</h2>
+              <h2 className="text-base font-bold text-base-content">Contribution history</h2>
               <p className="text-xs text-base-content/60 mt-0.5">
                 All claimed microtasks, verification statuses, and on-chain payouts.
               </p>
             </div>
 
             {/* Filter Pills */}
-            <div className="flex items-center gap-1">
-              {["ALL", "VERIFIED", "PENDING_RELEASE", "IN_DISPUTE", "SUBMITTED", "CLAIMED"].map((state) => (
+            <div className="profile-filters" role="group" aria-label="Filter contribution history">
+              {["ALL", "VERIFIED", "VERIFICATION_FAILED", "IN_DISPUTE", "SUBMITTED", "CLAIMED"].map((state) => (
                 <button
                   key={state}
                   type="button"
+                  aria-pressed={filterState === state}
                   onClick={() => setFilterState(state)}
                   className={`btn btn-xs ${
                     filterState === state
@@ -242,7 +234,7 @@ const WorkerProfile = () => {
                       : "btn-ghost text-base-content/60"
                   } text-[11px] font-medium`}
                 >
-                  {state}
+                  {state === "ALL" ? "All work" : STATE_BADGE[state]?.label.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) || state}
                 </button>
               ))}
             </div>
@@ -254,7 +246,7 @@ const WorkerProfile = () => {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="table table-sm w-full">
+              <table className="responsive-records table table-sm w-full">
                 <thead>
                   <tr className="border-b border-base-300 text-base-content/60 text-[11px] uppercase tracking-wider">
                     <th className="font-semibold py-3">Task ID</th>
@@ -272,7 +264,7 @@ const WorkerProfile = () => {
                         <td className="font-mono text-xs text-base-content/60 py-3.5">
                           #{st.taskId?.slice(0, 8)}
                         </td>
-                        <td className="max-w-md py-3.5">
+                        <td data-label="Task" className="max-w-md py-3.5">
                           <p className="font-semibold text-base-content truncate">
                             {subtaskHeadline(st)}
                           </p>
@@ -280,10 +272,10 @@ const WorkerProfile = () => {
                             {st.rangeLabel}
                           </span>
                         </td>
-                        <td className="font-mono font-bold text-base-content py-3.5">
-                          {st.reward} MON
+                        <td data-label="Reward" className="font-mono font-bold text-base-content py-3.5">
+                          {st.reward} {currency}
                         </td>
-                        <td className="py-3.5">
+                        <td data-label="Status" className="py-3.5">
                           <span className={`badge badge-xs ${badge.cls} font-mono font-bold`}>
                             {badge.label}
                           </span>

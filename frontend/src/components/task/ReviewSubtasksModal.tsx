@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useWeb3 } from "../../contexts/Web3Context";
 import { Plus, X, AlertTriangle, ListChecks, ChevronDown, ChevronRight } from "lucide-react";
 import {
   Dialog,
@@ -30,16 +31,19 @@ export interface DraftSubtask {
 }
 
 interface IncomingSubtask {
+  id?: string;
+  isEdited?: boolean;
+  isManual?: boolean;
   rangeLabel: string;
   description?: string;
-  descriptionCID: string;
+  descriptionCID?: string;
   objective?: string;
   contextNotes?: string;
   acceptanceCriteria?: string[];
   deliverableFormat?: string;
   skills?: string[];
   estimatedMinutes?: number;
-  reward: number;
+  reward: number | string;
   leaseDuration: number;
 }
 
@@ -52,7 +56,7 @@ interface ReviewSubtasksModalProps {
   budget: string;
   subtasks: IncomingSubtask[];
   onConfirm: (result: { masterTaskCID: string; finalSubtasks: DraftSubtask[] }) => void;
-  onCancel: () => void;
+  onCancel: (rows?: DraftSubtask[]) => void;
 }
 
 const makeId = () =>
@@ -61,6 +65,7 @@ const makeId = () =>
     : `row-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 export function ReviewSubtasksModal({
+
   open,
   masterTask,
   masterTaskCID,
@@ -71,6 +76,8 @@ export function ReviewSubtasksModal({
   onConfirm,
   onCancel,
 }: ReviewSubtasksModalProps) {
+  const { currencySymbol } = useWeb3();
+  const currency = currencySymbol || "ETH";
   const [rows, setRows] = useState<DraftSubtask[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -78,7 +85,7 @@ export function ReviewSubtasksModal({
     if (open) {
       setRows(
         subtasks.map((st) => ({
-          id: makeId(),
+          id: st.id || makeId(),
           rangeLabel: st.rangeLabel,
           description: st.description || "",
           descriptionCID: st.descriptionCID,
@@ -90,8 +97,8 @@ export function ReviewSubtasksModal({
           estimatedMinutes: st.estimatedMinutes,
           reward: String(st.reward),
           leaseDuration: st.leaseDuration,
-          isEdited: false,
-          isManual: false,
+          isEdited: st.isEdited ?? false,
+          isManual: st.isManual ?? false,
         }))
       );
       setExpanded({});
@@ -183,10 +190,10 @@ export function ReviewSubtasksModal({
     validationMessage = "Every subtask needs at least one acceptance criterion — it's what the AI verifier grades against.";
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(rows); }}>
+      <DialogContent className="review-dialog">
         <DialogHeader>
-          <DialogTitle>Review Subtask Decomposition</DialogTitle>
+          <DialogTitle>Shape your project plan</DialogTitle>
           <DialogDescription>
             The AI split "{masterTask.slice(0, 90)}{masterTask.length > 90 ? "…" : ""}" into
             the subtasks below. Acceptance criteria are what the verifier grades against and
@@ -358,7 +365,7 @@ export function ReviewSubtasksModal({
 
                 <div className="flex flex-wrap gap-3 items-center">
                   <label className="flex items-center gap-2 text-xs text-base-content/70">
-                    Reward (MON)
+                    Reward ({currency})
                     <input
                       type="number"
                       min="0"
@@ -406,21 +413,21 @@ export function ReviewSubtasksModal({
 
         <div className="flex items-center justify-between mt-5 pt-3 border-t border-base-300 text-sm">
           <span className="text-base-content/70">
-            Total: <span className="font-mono font-semibold text-base-content">{totalReward.toFixed(4)} MON</span>
-            {" "}/ Budget: <span className="font-mono">{budgetNum.toFixed(4)} MON</span>
+            Total: <span className="font-mono font-semibold text-base-content">{totalReward.toFixed(4)} {currency}</span>
+            {" "}/ Budget: <span className="font-mono">{budgetNum.toFixed(4)} {currency}</span>
           </span>
           {overBudget && <span className="badge badge-error badge-sm">Over budget</span>}
         </div>
 
         {validationMessage && (
-          <div className="alert alert-error mt-3 py-2 text-sm">
+          <div role="alert" className="alert alert-error mt-3 py-2 text-sm">
             <AlertTriangle className="h-4 w-4" />
             <span>{validationMessage}</span>
           </div>
         )}
 
         <DialogFooter>
-          <button type="button" onClick={onCancel} className="btn btn-ghost">
+          <button type="button" onClick={() => onCancel(rows)} className="btn btn-ghost">
             Cancel
           </button>
           <button
@@ -429,7 +436,7 @@ export function ReviewSubtasksModal({
             onClick={() => onConfirm({ masterTaskCID, finalSubtasks: rows })}
             className="btn btn-neutral"
           >
-            Confirm &amp; Create Task
+            Confirm &amp; fund project
           </button>
         </DialogFooter>
       </DialogContent>

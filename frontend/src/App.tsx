@@ -1,3 +1,6 @@
+import { RouteAnnouncer } from "./components/layout/RouteAnnouncer";
+import { PageError } from "./components/ui/PageState";
+import { Link } from "react-router-dom";
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Web3Provider } from './contexts/Web3Context';
 import AppShell from './components/layout/AppShell';
@@ -14,6 +17,7 @@ function App() {
   return (
     <Web3Provider>
       <BrowserRouter>
+        <RouteAnnouncer />
         <Routes>
           {/* Public landing page — no sidebar */}
           <Route path="/" element={<LandingPage />} />
@@ -29,8 +33,9 @@ function App() {
           <Route path="/admin" element={<AppShell><AdminDashboard /></AppShell>} />
 
           {/* High-contrast technical dashboard — standalone shell, no sidebar theme */}
-          <Route path="/creator/dashboard" element={<CreatorDashboard />} />
+          <Route path="/creator/dashboard" element={<AppShell><CreatorDashboard /></AppShell>} />
           <Route path="/creator/new" element={<AppShell><CustomerDashboard /></AppShell>} />
+          <Route path="*" element={<AppShell><PageError title="This page has moved off course" message="The link may be incomplete. Return to your workspace to pick up where you left off."><Link className="btn btn-primary" to="/creator/dashboard">Open workspace</Link></PageError></AppShell>} />
         </Routes>
       </BrowserRouter>
     </Web3Provider>

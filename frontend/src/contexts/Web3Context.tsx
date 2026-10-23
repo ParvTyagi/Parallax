@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { ethers } from 'ethers';
-import { TASK_MANAGER_ADDRESS, TASK_MANAGER_ABI } from '../lib/constants';
+import { TASK_MANAGER_ADDRESS, TASK_MANAGER_ABI, ETH_CHAIN_ID } from '../lib/constants';
 
 declare global {
   interface Window {
@@ -9,8 +9,7 @@ declare global {
   }
 }
 
-export const MONAD_CHAIN_ID = "0x279F"; // 10143 in decimal
-
+export const MONAD_CHAIN_ID = "0x279f"; // 10143 in decimal
 export const MONAD_TESTNET_CONFIG = {
   chainId: MONAD_CHAIN_ID,
   chainName: "Monad Testnet",
@@ -23,26 +22,75 @@ export const MONAD_TESTNET_CONFIG = {
   blockExplorerUrls: ["https://testnet.monadexplorer.com"],
 };
 
-export const ensureMonadNetwork = async () => {
+export const ETH_SEPOLIA_CHAIN_ID = "0xaa36a7"; // 11155111 in decimal
+export const ETH_LOCAL_CHAIN_ID = "0x7a69";   // 31337 in decimal (Hardhat)
+
+export const SEPOLIA_CONFIG = {
+  chainId: ETH_SEPOLIA_CHAIN_ID,
+  chainName: "Sepolia",
+  nativeCurrency: {
+    name: "SepoliaETH",
+    symbol: "SepoliaETH",
+    decimals: 18,
+  },
+  rpcUrls: [
+    "https://ethereum-sepolia-rpc.publicnode.com",
+    "https://sepolia.drpc.org",
+    "https://1rpc.io/sepolia",
+    "https://rpc.sepolia.org",
+  ],
+  blockExplorerUrls: ["https://sepolia.etherscan.io"],
+};
+
+export const LOCALHOST_CONFIG = {
+  chainId: ETH_LOCAL_CHAIN_ID,
+  chainName: "Hardhat Localhost",
+  nativeCurrency: {
+    name: "ETH",
+    symbol: "ETH",
+    decimals: 18,
+  },
+  rpcUrls: ["http://127.0.0.1:8545"],
+  blockExplorerUrls: [],
+};
+
+const CHAIN_CONFIGS: Record<string, any> = {
+  [MONAD_CHAIN_ID]: MONAD_TESTNET_CONFIG,
+  "0x279F": MONAD_TESTNET_CONFIG,
+  [ETH_SEPOLIA_CHAIN_ID]: SEPOLIA_CONFIG,
+  "0xAA36A7": SEPOLIA_CONFIG,
+  [ETH_LOCAL_CHAIN_ID]: LOCALHOST_CONFIG,
+  "0x7A69": LOCALHOST_CONFIG,
+};
+
+export const TARGET_CHAIN_ID = ETH_CHAIN_ID;
+
+export const ensureEthereumNetwork = async () => {
   if (typeof window === "undefined" || !window.ethereum) return;
+  const targetChain = TARGET_CHAIN_ID.startsWith("0x") ? TARGET_CHAIN_ID : `0x${parseInt(TARGET_CHAIN_ID).toString(16)}`;
+
   try {
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: MONAD_CHAIN_ID }],
+      params: [{ chainId: targetChain }],
     });
   } catch (switchError: any) {
     if (switchError.code === 4902 || switchError.data?.originalError?.code === 4902) {
+      const config = CHAIN_CONFIGS[targetChain] || SEPOLIA_CONFIG;
       try {
         await window.ethereum.request({
           method: "wallet_addEthereumChain",
-          params: [MONAD_TESTNET_CONFIG],
+          params: [config],
         });
       } catch (addError) {
-        console.error("Failed to add Monad Testnet to wallet:", addError);
+        console.error("Failed to add Ethereum network to wallet:", addError);
       }
     }
   }
 };
+
+// Backwards compatibility alias
+export const ensureMonadNetwork = ensureEthereumNetwork;
 
 interface Web3ContextType {
   account: string | null;
@@ -50,6 +98,8 @@ interface Web3ContextType {
   provider: ethers.BrowserProvider | null;
   signer: ethers.JsonRpcSigner | null;
   taskManager: ethers.Contract | null;
+  networkName: string;
+  currencySymbol: string;
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
   isConnecting: boolean;
@@ -63,6 +113,8 @@ const Web3Context = createContext<Web3ContextType>({
   provider: null,
   signer: null,
   taskManager: null,
+  networkName: "Sepolia",
+  currencySymbol: "SepoliaETH",
   connectWallet: async () => {},
   disconnectWallet: () => {},
   isConnecting: false,
@@ -79,11 +131,13 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
   const [taskManager, setTaskManager] = useState<ethers.Contract | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [networkName, setNetworkName] = useState<string>("Sepolia");
+  const [currencySymbol, setCurrencySymbol] = useState<string>("SepoliaETH");
 
   const fetchBalance = async (addr: string, prov: ethers.BrowserProvider) => {
     try {
       const bal = await prov.getBalance(addr);
-      setBalance(Number(ethers.formatEther(bal)).toFixed(2));
+      setBalance(Number(ethers.formatEther(bal)).toFixed(4));
     } catch (e) {
       console.warn("Failed to fetch balance", e);
     }
@@ -110,6 +164,13 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
             setSigner(_signer);
             setTaskManager(new ethers.Contract(TASK_MANAGER_ADDRESS, TASK_MANAGER_ABI, _signer));
             fetchBalance(addr, _provider);
+
+            const net = await _provider.getNetwork();
+            if (net.chainId === 10143n) { setNetworkName("Monad Testnet"); setCurrencySymbol("MON"); }
+            else if (net.chainId === 11155111n) { setNetworkName("Sepolia"); setCurrencySymbol("SepoliaETH"); }
+            else if (net.chainId === 31337n) { setNetworkName("Localhost"); setCurrencySymbol("ETH"); }
+            else if (net.chainId === 1n) { setNetworkName("Ethereum Mainnet"); setCurrencySymbol("ETH"); }
+            else { setNetworkName(`Chain ${net.chainId}`); }
           }
         } catch (e) {
           console.error("Auto-connect failed", e);
@@ -138,13 +199,13 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
 
   const connectWallet = async () => {
     if (!window.ethereum) {
-      alert("Please install MetaMask!");
+      alert("Please install MetaMask or an Ethereum Web3 wallet!");
       return;
     }
     
     setIsConnecting(true);
     try {
-      await ensureMonadNetwork();
+      await ensureEthereumNetwork();
       const _provider = new ethers.BrowserProvider(window.ethereum);
       await _provider.send("eth_requestAccounts", []);
       
@@ -156,6 +217,13 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
       setAccount(address);
       setTaskManager(new ethers.Contract(TASK_MANAGER_ADDRESS, TASK_MANAGER_ABI, _signer));
       fetchBalance(address, _provider);
+
+      const net = await _provider.getNetwork();
+      if (net.chainId === 10143n) { setNetworkName("Monad Testnet"); setCurrencySymbol("MON"); }
+      else if (net.chainId === 11155111n) { setNetworkName("Ethereum Sepolia"); setCurrencySymbol("ETH"); }
+      else if (net.chainId === 31337n) { setNetworkName("Localhost"); setCurrencySymbol("ETH"); }
+      else if (net.chainId === 1n) { setNetworkName("Ethereum Mainnet"); setCurrencySymbol("ETH"); }
+      else { setNetworkName(`Chain ${net.chainId}`); }
     } catch (error) {
       console.error("Error connecting wallet", error);
     } finally {
@@ -171,7 +239,22 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <Web3Context.Provider value={{ account, balance, provider, signer, taskManager, connectWallet, disconnectWallet, isConnecting, refreshBalance, ensureNetwork: ensureMonadNetwork }}>
+    <Web3Context.Provider
+      value={{
+        account,
+        balance,
+        provider,
+        signer,
+        taskManager,
+        networkName,
+        currencySymbol,
+        connectWallet,
+        disconnectWallet,
+        isConnecting,
+        refreshBalance,
+        ensureNetwork: ensureEthereumNetwork,
+      }}
+    >
       {children}
     </Web3Context.Provider>
   );

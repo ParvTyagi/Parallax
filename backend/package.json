@@ -14,6 +14,7 @@
     "@types/multer": "^2.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "embedded-postgres": "^18.4.0-beta.17",
     "ethers": "^6.11.1",
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.2",

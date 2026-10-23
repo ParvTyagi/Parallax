@@ -1,17 +1,21 @@
+import { PageLoading, PageError } from "../components/ui/PageState";
+import { Link } from "react-router-dom";
 import { useState, useEffect, useCallback } from "react";
 import { useWeb3 } from "../contexts/Web3Context";
 import { ethers } from "ethers";
 import { API_URL } from "../lib/constants";
+import { syncTaskTx } from "../lib/utils";
+import { privateAccessHeaders } from "../lib/privateAccess";
 import {
   Landmark,
   ShieldCheck,
-  AlertTriangle,
   Gavel,
   Settings2,
 } from "lucide-react";
 
 export default function AdminDashboard() {
-  const { account, taskManager } = useWeb3();
+  const { account, taskManager, currencySymbol, connectWallet, isConnecting } = useWeb3();
+  const currency = currencySymbol || "ETH";
   const [balance, setBalance] = useState("0.00");
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
@@ -21,15 +25,19 @@ export default function AdminDashboard() {
   const [bondAmount, setBondAmount] = useState<string | null>(null);
   const [newBondAmount, setNewBondAmount] = useState("");
   const [updatingBond, setUpdatingBond] = useState(false);
+  const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
+  const [accessError, setAccessError] = useState("");
+  const [disputeError, setDisputeError] = useState("");
 
   const fetchDisputes = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/tasks/disputes/open`);
-      if (res.ok) setDisputes(await res.json());
+      const res = await fetch(`${API_URL}/api/tasks/disputes/open`, { headers: privateAccessHeaders(account) });
+      if (!res.ok) throw new Error("Could not load the dispute queue.");
+      setDisputes(await res.json()); setDisputeError("");
     } catch (e) {
-      console.error(e);
+      setDisputeError(e instanceof Error ? e.message : "Could not load the dispute queue.");
     }
-  }, []);
+  }, [account]);
 
   useEffect(() => {
     checkAdmin();
@@ -44,6 +52,7 @@ export default function AdminDashboard() {
   }, [isOwner, fetchDisputes]);
 
   const checkAdmin = async () => {
+    setAccessError(""); setIsOwner(false);
     if (!account || !taskManager) {
       setLoading(false);
       return;
@@ -64,15 +73,14 @@ export default function AdminDashboard() {
           ["function totalProtocolRevenue() view returns (uint256)"],
           taskManager.runner
         );
-        const slashRev = await taskManager.totalProtocolRevenue();
-        const feeRev = await escrowContract.totalProtocolRevenue();
-        setBalance(ethers.formatEther(slashRev + feeRev));
+        const totalRev = await escrowContract.totalProtocolRevenue();
+        setBalance(ethers.formatEther(totalRev));
 
         const bond = await taskManager.workerBondAmount();
         setBondAmount(ethers.formatEther(bond));
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
+      setAccessError("Could not verify access. Check your wallet network and try again.");
     } finally {
       setLoading(false);
     }
@@ -81,14 +89,16 @@ export default function AdminDashboard() {
   const handleResolve = async (taskId: string, subtaskId: string, workerWins: boolean) => {
     if (!taskManager) return;
     if (!window.confirm(`Resolve in favor of the ${workerWins ? "worker" : "creator"}?`)) return;
-    setResolvingId(subtaskId);
+    setResolvingId(subtaskId); setFeedback(null);
     try {
       const tx = await taskManager.resolveDispute(taskId, subtaskId, workerWins);
       await tx.wait();
+      await syncTaskTx(tx.hash);
       await fetchDisputes();
+      setFeedback({ text: "Dispute resolution confirmed on-chain.", error: false });
     } catch (e: any) {
       console.error("Resolve dispute error:", e);
-      alert(e.reason || e.info?.error?.message || e.message || "Resolution failed");
+      setFeedback({ text: e.reason || e.info?.error?.message || e.message || "Resolution failed", error: true });
     } finally {
       setResolvingId(null);
     }
@@ -96,68 +106,42 @@ export default function AdminDashboard() {
 
   const handleUpdateBond = async () => {
     if (!taskManager || !newBondAmount) return;
-    setUpdatingBond(true);
+    if (!Number.isFinite(Number(newBondAmount)) || Number(newBondAmount) < 0) { setFeedback({ text: "Enter a valid bond amount of zero or greater.", error: true }); return; }
+    setUpdatingBond(true); setFeedback(null);
     try {
       const tx = await taskManager.setWorkerBondAmount(ethers.parseEther(newBondAmount));
       await tx.wait();
       setBondAmount(newBondAmount);
       setNewBondAmount("");
+      setFeedback({ text: "Worker bond updated successfully.", error: false });
     } catch (e: any) {
       console.error("Update bond error:", e);
-      alert(e.reason || e.info?.error?.message || e.message || "Update failed");
+      setFeedback({ text: e.reason || e.info?.error?.message || e.message || "Update failed", error: true });
     } finally {
       setUpdatingBond(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-80 gap-3">
-        <span className="loading loading-spinner loading-md text-primary" />
-        <span className="text-xs text-base-content/60 font-medium">Verifying admin access…</span>
-      </div>
-    );
-  }
-
-  if (!isOwner) {
-    return (
-      <div className="card bg-base-100 border border-base-300/80 p-12 text-center max-w-md mx-auto mt-12">
-        <div className="space-y-3">
-          <div className="w-12 h-12 rounded-full bg-warning/10 text-warning flex items-center justify-center mx-auto">
-            <AlertTriangle className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-base-content">Access Restricted</h3>
-          <p className="text-xs text-base-content/60">
-            This section is restricted to the ParallaxTaskManager's on-chain{" "}
-            <code className="font-mono text-[11px]">admin()</code> address
-            {adminAddress ? (
-              <>
-                {" "}(<code className="font-mono text-[11px]">{adminAddress.slice(0, 8)}…{adminAddress.slice(-6)}</code>).
-              </>
-            ) : (
-              "."
-            )}
-          </p>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <PageLoading label="Verifying administration access..." />;
+  if (accessError) return <PageError title="Access could not be verified" message={accessError} onRetry={checkAdmin} />;
+  if (!isOwner) return <PageError title={account ? "Administrator access required" : "Connect your administrator wallet"} message={account ? `This workspace is available to the contract administrator${adminAddress ? ` (${adminAddress.slice(0, 8)}...${adminAddress.slice(-6)})` : ""}.` : "Connect your wallet to verify access to protocol operations."}>{!account && <button className="btn btn-primary" onClick={connectWallet} disabled={isConnecting}>{isConnecting ? "Connecting..." : "Connect wallet"}</button>}<Link className="btn btn-outline" to="/creator/dashboard">Back to workspace</Link></PageError>;
 
   return (
-    <div className="animate-in fade-in duration-300 pb-20 space-y-8">
+    <div className="admin-page animate-in fade-in duration-300 pb-20 space-y-8">
+      {feedback && <div role={feedback.error ? "alert" : "status"} className={`alert ${feedback.error ? "alert-error" : "alert-success"}`}><span className="break-all">{feedback.text}</span><button className="btn btn-ghost btn-sm" onClick={() => setFeedback(null)}>Dismiss</button></div>}
       {/* ─── Header ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="badge badge-warning badge-sm font-bold gap-1 font-mono">
-              <ShieldCheck className="w-3 h-3" /> ADMIN ONLY
+              <ShieldCheck className="w-3 h-3" /> Administrator
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-base-content">
-            Protocol Administration
+            Protocol operations
           </h1>
           <p className="text-xs md:text-sm text-base-content/60 mt-0.5">
-            Dispute resolution, bond configuration, and protocol revenue on Monad.
+            Dispute resolution, bond configuration, and protocol revenue on Ethereum.
           </p>
         </div>
       </div>
@@ -170,7 +154,7 @@ export default function AdminDashboard() {
               Lifetime Protocol Revenue
             </span>
             <div className="text-2xl md:text-3xl font-bold font-mono text-base-content">
-              {balance} <span className="text-sm font-sans font-medium text-base-content/60">MON</span>
+              {balance} <span className="text-sm font-sans font-medium text-base-content/60">{currency}</span>
             </div>
             <span className="text-[11px] text-base-content/60">
               Already forwarded to the treasury wallet — nothing sits locked in-contract to withdraw.
@@ -214,7 +198,7 @@ export default function AdminDashboard() {
             )}
           </div>
 
-          {disputes.length === 0 ? (
+          {disputeError ? <div role="alert" className="alert alert-error"><span>{disputeError}</span><button className="btn btn-sm" onClick={fetchDisputes}>Retry</button></div> : disputes.length === 0 ? (
             <p className="text-xs text-base-content/60 py-4">No open disputes.</p>
           ) : (
             <div className="space-y-3">
@@ -227,16 +211,21 @@ export default function AdminDashboard() {
                         Task #{d.taskId?.slice(0, 8)} · Worker {d.worker?.slice(0, 8)}…{d.worker?.slice(-4)}
                       </p>
                     </div>
-                    <span className="badge badge-neutral font-mono text-xs shrink-0">{d.reward} MON</span>
+                    <span className="badge badge-neutral font-mono text-xs shrink-0">{d.reward} {currency}</span>
                   </div>
-                  <div className="flex items-center gap-2 pt-2 border-t border-base-300/60">
+                  <Link to={"/task/" + d.taskId} className="link text-sm">Review full task and submission</Link>
+                  {d.qualityScore != null && <p className="text-sm">AI score: {d.qualityScore}/100</p>}
+                  {d.aiRationale && <p className="text-sm whitespace-pre-wrap">{d.aiRationale}</p>}
+                  {d.submissionContent && <details><summary>Worker submission</summary><p className="text-sm whitespace-pre-wrap">{d.submissionContent}</p></details>}
+                  <p className="text-xs">Approval pays the worker and returns the bond. Upholding rejection refunds the creator and slashes the bond.</p>
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-base-300/60">
                     <button
                       type="button"
                       onClick={() => handleResolve(d.taskId, d.subtaskId, true)}
                       disabled={resolvingId === d.subtaskId}
                       className="btn btn-success btn-xs font-semibold"
                     >
-                      Rule for Worker
+                      Approve &amp; pay worker
                     </button>
                     <button
                       type="button"
@@ -244,7 +233,7 @@ export default function AdminDashboard() {
                       disabled={resolvingId === d.subtaskId}
                       className="btn btn-error btn-xs font-semibold"
                     >
-                      Rule for Creator
+                      Uphold rejection
                     </button>
                   </div>
                 </div>
@@ -263,16 +252,16 @@ export default function AdminDashboard() {
               <h2 className="text-base font-bold text-base-content">Worker Bond Amount</h2>
             </div>
             <p className="text-xs text-base-content/60">
-              MON a worker must post to claim any subtask. Current: <span className="font-mono font-bold text-base-content">{bondAmount ?? "…"} MON</span>
+              {currency} a worker must post to claim any subtask. Current: <span className="font-mono font-bold text-base-content">{bondAmount ?? "…"} {currency}</span>
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 id="admin-bond-amount"
                 type="number"
                 min="0"
                 step="0.001"
-                placeholder="New bond amount (MON)"
-                aria-label="New worker bond amount in MON"
+                placeholder={`New bond amount (${currency})`}
+                aria-label={`New worker bond amount in ${currency}`}
                 className="input input-sm input-bordered flex-1 text-xs"
                 value={newBondAmount}
                 onChange={(e) => setNewBondAmount(e.target.value)}
@@ -312,7 +301,7 @@ export default function AdminDashboard() {
                   </tr>
                   <tr>
                     <td className="font-semibold text-base-content py-3">Bond Slash Penalty</td>
-                    <td className="text-base-content/60 py-3">Seized on failed verification, spam forfeit, or a lost dispute</td>
+                    <td className="text-base-content/60 py-3">Seized after an upheld rejection or an expired claim reclaimed by another user</td>
                     <td className="py-3 font-mono font-bold text-error">100%</td>
                   </tr>
                 </tbody>

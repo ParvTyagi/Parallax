@@ -1,4 +1,5 @@
-import { CheckCircle2, Circle, XCircle, FileText, Target, ChevronDown } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Circle, XCircle, FileText, Target, ChevronDown, Copy, Check } from "lucide-react";
 
 export interface CriterionResult {
   criterion: string;
@@ -35,7 +36,7 @@ export function subtaskHeadline(st: SubtaskLike): string {
 
 /// Acceptance criteria checklist: the bar to clear before verification, and the
 /// verifier's per-criterion verdict afterwards.
-export function AcceptanceCriteria({ subtask }: { subtask: SubtaskLike }) {
+export function AcceptanceCriteria({ subtask, showVerificationHint = true }: { subtask: SubtaskLike; showVerificationHint?: boolean }) {
   const criteria = subtask.acceptanceCriteria || [];
   const results = subtask.criteriaResults || [];
   if (criteria.length === 0 && results.length === 0) return null;
@@ -89,7 +90,7 @@ export function AcceptanceCriteria({ subtask }: { subtask: SubtaskLike }) {
         ))}
       </ul>
 
-      {!graded && (
+      {!graded && showVerificationHint && (
         <p className="text-[11px] text-base-content/60 italic">
           The AI verifier grades each of these independently. All must be met to release payment.
         </p>
@@ -100,16 +101,15 @@ export function AcceptanceCriteria({ subtask }: { subtask: SubtaskLike }) {
 
 /// Full worker-facing brief: objective, context, criteria, deliverable format,
 /// and the raw markdown spec behind a disclosure.
-export function SubtaskSpec({ subtask, showRawBrief = true }: { subtask: SubtaskLike; showRawBrief?: boolean }) {
+export function SubtaskSpec({ subtask, showRawBrief = true, showHeadline = true, showVerificationHint = true }: { subtask: SubtaskLike; showRawBrief?: boolean; showHeadline?: boolean; showVerificationHint?: boolean }) {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const headline = subtaskHeadline(subtask);
   const hasStructured =
     !!subtask.objective || (subtask.acceptanceCriteria?.length ?? 0) > 0 || !!subtask.deliverableFormat;
 
   return (
     <div className="space-y-3">
-      <div className="text-sm font-medium text-base-content leading-relaxed bg-base-200/40 p-3 rounded-lg border border-base-300/60">
-        {headline}
-      </div>
+      {showHeadline && <p className="text-sm text-base-content leading-relaxed">{headline}</p>}
 
       {subtask.contextNotes && (
         <div className="text-xs text-base-content/60 leading-relaxed">
@@ -118,7 +118,7 @@ export function SubtaskSpec({ subtask, showRawBrief = true }: { subtask: Subtask
         </div>
       )}
 
-      <AcceptanceCriteria subtask={subtask} />
+      <AcceptanceCriteria subtask={subtask} showVerificationHint={showVerificationHint} />
 
       {subtask.deliverableFormat && (
         <div className="flex items-start gap-1.5 text-xs text-base-content/60">
@@ -150,14 +150,33 @@ export function SubtaskSpec({ subtask, showRawBrief = true }: { subtask: Subtask
       )}
 
       {showRawBrief && subtask.description && hasStructured && (
-        <details className="group">
-          <summary className="cursor-pointer list-none text-[11px] font-bold uppercase tracking-wider text-base-content/60 hover:text-base-content/70 flex items-center gap-1">
+        <details className="group relative">
+          <summary className="cursor-pointer list-none text-[11px] font-bold uppercase tracking-wider text-base-content/60 hover:text-base-content/70 flex items-center gap-1 pr-20">
             <ChevronDown
               aria-hidden="true"
               className="w-3 h-3 transition-transform motion-reduce:transition-none group-open:rotate-180"
             />
-            Full brief
+            Original specification
           </summary>
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs gap-1 absolute right-0 top-0"
+            aria-label="Copy original specification"
+            title="Copy original specification"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(subtask.description || "");
+                setCopyStatus("copied");
+                window.setTimeout(() => setCopyStatus("idle"), 1800);
+              } catch {
+                setCopyStatus("failed");
+                window.setTimeout(() => setCopyStatus("idle"), 1800);
+              }
+            }}
+          >
+            {copyStatus === "copied" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy"}
+          </button>
           <pre className="mt-2 text-xs text-base-content/70 font-mono bg-base-200/40 p-3 rounded-lg border border-base-300/60 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
             {subtask.description}
           </pre>

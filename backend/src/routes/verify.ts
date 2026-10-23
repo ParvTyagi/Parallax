@@ -3,26 +3,27 @@ import { prisma } from "../db/client";
 import { fetchFromIPFS } from "../lib/ipfs";
 import { runVerification } from "../lib/worker";
 import { z } from "zod";
+import { activeTaskFilter } from "../lib/deployments";
 
 const router = Router();
 
-const VerifyRequestSchema = z.object({
+const VerifyPreviewSchema = z.object({
   subtaskDescription: z.string(),
   workerSubmission: z.string(),
-  /// Optional: when supplied, the preview grades against the same stored acceptance
-  /// criteria the on-chain verifier will use, so a worker's self-check matches the
-  /// real verdict instead of being a looser second opinion.
   subtaskId: z.string().optional()
 });
 
 router.post("/", async (req, res) => {
   try {
-    const parsed = VerifyRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
+    // Preview verification mode ({ subtaskDescription, workerSubmission }).
+    // Settlement runs through the durable job worker after the on-chain
+    // SubmissionProofRecorded event, so preview requests cannot race it.
+    const previewParsed = VerifyPreviewSchema.safeParse(req.body);
+    if (!previewParsed.success) {
       return res.status(400).json({ error: "Invalid request body" });
     }
 
-    const { subtaskDescription, workerSubmission, subtaskId } = parsed.data;
+    const { subtaskDescription, workerSubmission, subtaskId } = previewParsed.data;
 
     let criteria: string[] = [];
     let label = "";
@@ -31,7 +32,8 @@ router.post("/", async (req, res) => {
     let requirement = subtaskDescription;
 
     if (subtaskId) {
-      const subtask = await prisma.subtask.findUnique({ where: { subtaskId } });
+      const subtask = await prisma.subtask.findFirst({ where: { subtaskId, task: activeTaskFilter() } });
+      if (!subtask) return res.status(404).json({ error: "Subtask not found on the active contract" });
       if (subtask) {
         criteria = subtask.acceptanceCriteria || [];
         label = subtask.rangeLabel;

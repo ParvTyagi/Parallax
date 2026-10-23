@@ -9,19 +9,22 @@ contract ParallaxTaskManager {
     address public platformTreasury;
     address public admin;
 
-    uint256 public constant DISPUTE_WINDOW = 48 hours;
-    // Minimum MON a worker must bond to claim a subtask. Slashed on failure/spam, returned on
-    // an undisputed, successful completion. Admin-tunable to keep the stake proportional to gas costs.
-    uint256 public workerBondAmount = 0.01 ether;
+    uint256 public constant DISPUTE_WINDOW = 0;
+    uint8 public constant VERIFICATION_THRESHOLD = 70;
+    // Minimum ETH a worker must bond to claim a subtask. Slashed on failure/spam, returned on
+    // successful verification. Admin-tunable to keep the stake proportional to gas costs.
+    uint256 public workerBondAmount = 0.001 ether;
 
     enum SubtaskState {
         CREATED,
         CLAIMED,
         SUBMITTED,
-        PENDING_RELEASE, // AI-verified, inside the 48h creator dispute window
-        DISPUTED,        // creator raised a dispute; awaiting admin resolution
-        VERIFIED,        // dispute window elapsed (or dispute resolved in worker's favor) and funds released
-        REJECTED
+        PENDING_RELEASE, // Reserved for compatibility with older deployments
+        DISPUTED,        // worker appealed a failed verdict; awaiting admin resolution
+        VERIFIED,        // Work approved and funds released
+        REJECTED,
+        CANCELLED,
+        VERIFICATION_FAILED // Reward and bond stay held for a worker appeal
     }
 
     struct Task {
@@ -47,6 +50,7 @@ contract ParallaxTaskManager {
 
     mapping(bytes32 => Task) public tasks;
     mapping(bytes32 => Subtask) public subtasks;
+    mapping(bytes32 => bytes32[]) public taskSubtaskIds;
 
     event TaskCreated(bytes32 indexed taskId, address indexed creator, uint256 budget, string description);
     event TaskCancelled(bytes32 indexed taskId, address indexed creator, uint256 refundedAmount);
@@ -54,9 +58,10 @@ contract ParallaxTaskManager {
     event SubtaskClaimed(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker, uint256 bondAmount);
     event SubmissionProofRecorded(bytes32 indexed taskId, bytes32 indexed subtaskId, bytes32 submissionHash);
     event SubtaskVerified(bytes32 indexed taskId, bytes32 indexed subtaskId, bool passed, uint8 score, uint256 disputeDeadline);
+    event SubtaskVerificationFailed(bytes32 indexed taskId, bytes32 indexed subtaskId, uint8 score);
     event ClaimForfeited(bytes32 indexed taskId, bytes32 indexed subtaskId, bool slashed);
     event PayoutReleased(bytes32 indexed taskId, bytes32 indexed subtaskId, address worker);
-    event DisputeRaised(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed creator);
+    event DisputeRaised(bytes32 indexed taskId, bytes32 indexed subtaskId, address indexed worker);
     event DisputeResolved(bytes32 indexed taskId, bytes32 indexed subtaskId, bool workerWins);
     event AdminUpdated(address indexed previousAdmin, address indexed newAdmin);
     event WorkerBondAmountUpdated(uint256 previousAmount, uint256 newAmount);
@@ -118,6 +123,7 @@ contract ParallaxTaskManager {
 
         for (uint i = 0; i < subtasksInputs.length; i++) {
             bytes32 subtaskId = keccak256(abi.encodePacked(taskId, i));
+            taskSubtaskIds[taskId].push(subtaskId);
             subtasks[subtaskId] = Subtask({
                 taskId: taskId,
                 worker: address(0),
@@ -135,26 +141,51 @@ contract ParallaxTaskManager {
         }
     }
 
+    function getTaskSubtasks(bytes32 taskId) external view returns (bytes32[] memory) {
+        return taskSubtaskIds[taskId];
+    }
+
     function cancelTask(bytes32 taskId) external {
         Task storage task = tasks[taskId];
         require(task.exists, "Task does not exist");
         require(!task.cancelled, "Task already cancelled");
         require(task.creator == msg.sender, "Only creator can cancel task");
 
-        uint256 refundable = escrow.escrowBalances(taskId);
-        require(refundable > 0, "No funds remaining to refund");
+        bytes32[] storage subtaskIds = taskSubtaskIds[taskId];
+        uint256 refundable = 0;
+        bool allCancelledOrDone = true;
 
-        task.cancelled = true;
+        for (uint i = 0; i < subtaskIds.length; i++) {
+            Subtask storage subtask = subtasks[subtaskIds[i]];
+            if (subtask.state == SubtaskState.CREATED) {
+                subtask.state = SubtaskState.CANCELLED;
+                refundable += subtask.reward;
+            } else if (
+                subtask.state != SubtaskState.VERIFIED &&
+                subtask.state != SubtaskState.REJECTED &&
+                subtask.state != SubtaskState.CANCELLED
+            ) {
+                allCancelledOrDone = false;
+            }
+        }
+
+        require(refundable > 0, "No unallocated funds remaining to refund");
+
+        if (allCancelledOrDone) {
+            task.cancelled = true;
+        }
+
         escrow.refund(taskId, msg.sender, refundable);
         emit TaskCancelled(taskId, msg.sender, refundable);
     }
 
-    /// @notice Claims a subtask. Requires the caller to post a MON bond, slashed on failure/spam
-    /// and returned once the work is verified and the dispute window elapses without challenge.
+    /// @notice Claims a subtask. Requires the caller to post an ETH bond, slashed on failure/spam
+    /// and returned immediately when the work is verified.
     function claimSubtask(bytes32 taskId, bytes32 subtaskId) external payable {
         Task storage task = tasks[taskId];
         require(task.exists, "Task does not exist");
         require(!task.cancelled, "Task has been cancelled");
+        require(msg.sender != task.creator, "Task creator cannot claim own subtask");
         require(msg.value >= workerBondAmount, "Insufficient worker bond");
 
         Subtask storage subtask = subtasks[subtaskId];
@@ -220,36 +251,23 @@ contract ParallaxTaskManager {
         emit SubmissionProofRecorded(taskId, subtaskId, submissionHash);
     }
 
-    /// @notice Records the AI orchestrator's verdict. On a pass, funds are NOT released immediately —
-    /// the subtask enters a 48-hour dispute window the creator can challenge via disputeTask(). On a
-    /// fail, the worker's bond is slashed and the subtask reopens for other workers.
+    /// @notice A passing verdict immediately pays the worker and returns their bond.
+    /// A failing verdict preserves the reward, bond and submission for a worker appeal.
     function verifySubtask(bytes32 taskId, bytes32 subtaskId, bool passed, uint8 score) external onlyOrchestrator {
         Subtask storage subtask = subtasks[subtaskId];
         require(subtask.exists, "Subtask does not exist");
         require(subtask.taskId == taskId, "Task ID mismatch");
         require(subtask.state == SubtaskState.SUBMITTED, "Subtask must be in SUBMITTED state");
 
+        require(score <= 100, "Score must be between 0 and 100");
         subtask.score = score;
 
-        if (passed) {
-            subtask.state = SubtaskState.PENDING_RELEASE;
-            subtask.disputeDeadline = block.timestamp + DISPUTE_WINDOW;
-            emit SubtaskVerified(taskId, subtaskId, true, score, subtask.disputeDeadline);
+        if (passed && score >= VERIFICATION_THRESHOLD) {
+            emit SubtaskVerified(taskId, subtaskId, true, score, 0);
+            _releasePayout(taskId, subtaskId);
         } else {
-            address worker = subtask.worker;
-            uint256 bond = subtask.bondAmount;
-
-            subtask.state = SubtaskState.CREATED;
-            subtask.worker = address(0);
-            subtask.claimTime = 0;
-            subtask.submissionHash = bytes32(0);
-            subtask.bondAmount = 0;
-
-            if (bond > 0) {
-                escrow.slashBond(worker, subtaskId, bond);
-            }
-
-            emit SubtaskVerified(taskId, subtaskId, false, score, 0);
+            subtask.state = SubtaskState.VERIFICATION_FAILED;
+            emit SubtaskVerificationFailed(taskId, subtaskId, score);
         }
     }
 
@@ -262,11 +280,17 @@ contract ParallaxTaskManager {
         require(subtask.state == SubtaskState.PENDING_RELEASE, "Subtask is not pending release");
         require(block.timestamp > subtask.disputeDeadline, "Dispute window still open");
 
+        _releasePayout(taskId, subtaskId);
+    }
+
+    function _releasePayout(bytes32 taskId, bytes32 subtaskId) internal {
+        Subtask storage subtask = subtasks[subtaskId];
         address worker = subtask.worker;
         uint256 bond = subtask.bondAmount;
 
         subtask.state = SubtaskState.VERIFIED;
         subtask.bondAmount = 0;
+        subtask.disputeDeadline = 0;
 
         escrow.releasePayment(taskId, subtaskId, worker, subtask.reward);
         if (bond > 0) {
@@ -276,17 +300,16 @@ contract ParallaxTaskManager {
         emit PayoutReleased(taskId, subtaskId, worker);
     }
 
-    /// @notice Lets the task creator challenge a verified subtask within the 48-hour dispute window.
+    /// @notice The submitting worker can appeal a failed AI verdict. Successful payouts are final.
     function disputeTask(bytes32 taskId, bytes32 subtaskId) external {
         Task storage task = tasks[taskId];
         require(task.exists, "Task does not exist");
-        require(task.creator == msg.sender, "Only the task creator can dispute");
 
         Subtask storage subtask = subtasks[subtaskId];
         require(subtask.exists, "Subtask does not exist");
         require(subtask.taskId == taskId, "Task ID mismatch");
-        require(subtask.state == SubtaskState.PENDING_RELEASE, "Subtask is not pending release");
-        require(block.timestamp <= subtask.disputeDeadline, "Dispute window has closed");
+        require(subtask.state == SubtaskState.VERIFICATION_FAILED, "Only failed verification can be disputed");
+        require(subtask.worker == msg.sender, "Only the submitting worker can dispute");
 
         subtask.state = SubtaskState.DISPUTED;
 
@@ -306,15 +329,10 @@ contract ParallaxTaskManager {
         address worker = subtask.worker;
         uint256 bond = subtask.bondAmount;
 
-        subtask.bondAmount = 0;
-
         if (workerWins) {
-            subtask.state = SubtaskState.VERIFIED;
-            escrow.releasePayment(taskId, subtaskId, worker, subtask.reward);
-            if (bond > 0) {
-                escrow.returnBond(worker, subtaskId, bond);
-            }
+            _releasePayout(taskId, subtaskId);
         } else {
+            subtask.bondAmount = 0;
             subtask.state = SubtaskState.REJECTED;
             escrow.refund(taskId, task.creator, subtask.reward);
             if (bond > 0) {

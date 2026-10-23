@@ -11,4 +11,5 @@ coverage/
 coverage.json
 .DS_Store
 .claude
+backend/data/
 

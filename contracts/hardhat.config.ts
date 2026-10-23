@@ -4,20 +4,41 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
+const accounts = process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [];
+
 const config: HardhatUserConfig = {
-  solidity: "0.8.24",
+  solidity: {
+    version: "0.8.24",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200,
+      },
+    },
+  },
+  defaultNetwork: "hardhat",
   networks: {
+    hardhat: {},
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
+    },
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL || process.env.ETH_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com",
+      chainId: 11155111,
+      accounts,
+    },
+    mainnet: {
+      url: process.env.MAINNET_RPC_URL || process.env.ETH_RPC_URL || "https://eth.llamarpc.com",
+      chainId: 1,
+      accounts,
+    },
     monadTestnet: {
       url: process.env.MONAD_RPC_URL || "",
       chainId: process.env.MONAD_CHAIN_ID ? parseInt(process.env.MONAD_CHAIN_ID) : 10143,
-      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : []
+      accounts,
     },
-    monadMainnet: {
-      url: process.env.MONAD_MAINNET_RPC_URL || "https://rpc.monad.xyz",
-      chainId: process.env.MONAD_MAINNET_CHAIN_ID ? parseInt(process.env.MONAD_MAINNET_CHAIN_ID) : 10143,
-      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : []
-    }
-  }
+  },
 };
 
 export default config;

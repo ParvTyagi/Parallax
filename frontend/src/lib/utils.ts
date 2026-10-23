@@ -1,8 +1,25 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { API_URL } from "./constants";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+/// Indexes a just-confirmed transaction with the backend so the DB is updated
+/// immediately without waiting for the background block poller.
+export async function syncTaskTx(txHash: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/tasks/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ txHash }),
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn("Task sync failed, falling back to chain poller:", e);
+    return false;
+  }
 }
 
 /// A bare IPFS CID — CIDv0 (`Qm…`) or CIDv1 (`baf…`). Used to make sure a

@@ -4,6 +4,7 @@
 /// mock, and asserts that concurrent sends are serialised onto strictly
 /// increasing nonces, and that a failure resyncs rather than skipping a nonce.
 import http from "http";
+import assert from "node:assert/strict";
 import { ethers } from "ethers";
 
 const CHAIN_ID = 10143;
@@ -71,6 +72,10 @@ function handle(r: any): any {
 (async () => {
   await new Promise<void>((r) => server.listen(4600, r));
 
+  process.env.ETH_RPC_URL = "http://127.0.0.1:4600";
+  process.env.ETHEREUM_RPC_URL = "http://127.0.0.1:4600";
+  process.env.RPC_URL = "http://127.0.0.1:4600";
+  process.env.LEGACY_DEPLOYMENTS = "[]";
   process.env.MONAD_RPC_URL = "http://127.0.0.1:4600";
   process.env.ORCHESTRATOR_PRIVATE_KEY = "0x" + "11".repeat(32);
   process.env.TASKMANAGER_ADDRESS = "0x" + "01".repeat(20);
@@ -89,6 +94,9 @@ function handle(r: any): any {
     )
   );
 
+  assert.ok(results.every(result => result.status === "fulfilled"));
+  assert.deepEqual(sentNonces, [7,8,9,10,11]);
+  assert.equal(maxInFlight, 1);
   console.log("settled:", results.map((r) => r.status).join(","));
   console.log("nonces used:", sentNonces.join(","));
   console.log("strictly increasing, no gaps:",
@@ -108,5 +116,8 @@ function handle(r: any): any {
   console.log("failing tx:", bad, "| next tx after failure:", after);
   console.log("nonces after recovery:", sentNonces.slice(before).join(","));
 
+  assert.equal(bad, "rejected");
+  assert.equal(after, "resolved");
+  assert.deepEqual(sentNonces.slice(before), [12]);
   server.close();
 })();

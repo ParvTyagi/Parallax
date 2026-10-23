@@ -2,6 +2,10 @@ import { Router } from "express";
 import { prisma } from "../db/client";
 import { z } from "zod";
 import crypto from "crypto";
+import { ethers } from "ethers";
+import { requestWallet } from "../lib/privateAccess";
+import { pinToIPFS } from "../lib/ipfs";
+import { activeTaskFilter } from "../lib/deployments";
 
 const router = Router();
 
@@ -19,33 +23,32 @@ router.post("/", async (req, res) => {
     }
 
     const { subtaskId, worker, content } = parsed.data;
-
-    const subtask = await prisma.subtask.findUnique({
-      where: { subtaskId }
+    const viewer = requestWallet(req);
+    if (!viewer || viewer.toLowerCase() !== worker.toLowerCase()) {
+      return res.status(403).json({ error: "Connect the claiming wallet to submit work." });
+    }
+    const subtask = await prisma.subtask.findFirst({
+      where: { subtaskId, task: activeTaskFilter() }
     });
 
     if (!subtask || subtask.worker?.toLowerCase() !== worker.toLowerCase()) {
       return res.status(403).json({ error: "Not authorized to submit for this subtask" });
     }
-
     // Hash the content for the on-chain proof
     const contentHash = "0x" + crypto.createHash("sha256").update(content).digest("hex");
-
-    // In a production app, we would upload to IPFS/S3 here. 
-    // For the hackathon MVP, we just store it in Postgres as the storagePath placeholder.
+    // Reuse the Pinata/IPFS path used by task descriptions. The CID is stored
+    // off-chain; the frontend records the content proof returned below.
+    const cid = await pinToIPFS(content);
     const submission = await prisma.submission.create({
-      data: {
-        subtaskId,
-        worker,
-        contentHash,
-        storagePath: content // Storing actual content here for MVP simplicity
-      }
+      data: { subtaskId, worker, contentHash, storagePath: cid }
     });
 
     res.json({
       success: true,
       submissionId: submission.id,
-      contentHash
+      cid,
+      contentHash,
+      proofHash: ethers.id(content)
     });
   } catch (error) {
     console.error("Error saving submission:", error);

@@ -5,7 +5,16 @@ export const API_URL =
     : "http://localhost:3000");
 
 export const TASK_MANAGER_ADDRESS =
-  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0x7371e2777cD7Cbf9d3bE33F780122C1C9C9A4F20";
+  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0xF5C1243881729C16882EA7bbE0a1846e12553EfA";
+
+export const ESCROW_ADDRESS =
+  import.meta.env.VITE_ESCROW_ADDRESS || "0xdF16FC24b9b137B3bB25F2b7A659b1B068bE834e";
+
+export const BLOCK_EXPLORER_URL =
+  import.meta.env.VITE_BLOCK_EXPLORER_URL || "https://sepolia.etherscan.io";
+
+export const ETH_CHAIN_ID =
+  import.meta.env.VITE_ETH_CHAIN_ID || import.meta.env.VITE_MONAD_CHAIN_ID || "0xaa36a7";
 
 export const TASK_MANAGER_ABI = [
   {
@@ -91,7 +100,7 @@ export const TASK_MANAGER_ABI = [
       {
         "indexed": true,
         "internalType": "address",
-        "name": "creator",
+        "name": "worker",
         "type": "address"
       }
     ],
@@ -264,6 +273,31 @@ export const TASK_MANAGER_ABI = [
       },
       {
         "indexed": false,
+        "internalType": "uint8",
+        "name": "score",
+        "type": "uint8"
+      }
+    ],
+    "name": "SubtaskVerificationFailed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "subtaskId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
         "internalType": "bool",
         "name": "passed",
         "type": "bool"
@@ -367,6 +401,19 @@ export const TASK_MANAGER_ABI = [
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "VERIFICATION_THRESHOLD",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
       }
     ],
     "stateMutability": "view",
@@ -503,6 +550,25 @@ export const TASK_MANAGER_ABI = [
     "name": "forfeitClaim",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "taskId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getTaskSubtasks",
+    "outputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "",
+        "type": "bytes32[]"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -685,6 +751,30 @@ export const TASK_MANAGER_ABI = [
         "internalType": "uint256",
         "name": "disputeDeadline",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "taskSubtaskIds",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",

@@ -216,7 +216,7 @@ export function AttachmentUploader({ attachment, onChange, disabled }: Props) {
       onDrop={handleDrop}
     >
       {staged.length === 0 ? (
-        <div className="flex gap-2">
+        <div className="upload-picker">
           {/* The input is sr-only rather than hidden: display:none drops it out of
               the tab order, leaving no way to attach a file by keyboard. */}
           <label
@@ -290,7 +290,7 @@ export function AttachmentUploader({ attachment, onChange, disabled }: Props) {
             ))}
           </ul>
 
-          <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-base-300 bg-base-100">
+          <div className="upload-toolbar border-t border-base-300 bg-base-100">
             <span className="text-[11px] text-base-content/60 font-mono">
               {staged.length} file{staged.length === 1 ? "" : "s"} · {formatBytes(stagedBytes)}
               {willZip && " · will be zipped"}

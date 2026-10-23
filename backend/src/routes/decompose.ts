@@ -20,43 +20,90 @@ const DecomposeRequestSchema = z.object({
 
 function buildPrompt(masterTaskText: string, budget: string) {
   return `
-You are the task orchestrator for Parallax, a decentralized microtasking network on Monad.
+You are the task orchestrator for Parallax, a decentralized microtasking network on Ethereum.
 A customer wants this master task done:
 
 <master_task>
 ${masterTaskText}
 </master_task>
 
-Total budget: ${budget} MON.
+Total budget: ${budget} ETH.
 
-Break it into exactly 3 to 5 subtasks that different workers can complete INDEPENDENTLY
-and IN PARALLEL - no subtask may depend on another subtask's output.
+Determine the number of subtasks from the requested deliverables, their complexity,
+and whether they can be completed independently. Choose between 1 and 5 subtasks.
+Description length is supporting context, not a formula for the subtask count.
+
+Before writing the JSON, identify the requested outputs and apply these rules:
+1. Use ONE subtask for a simple question, calculation, short list, short text,
+   or small cohesive deliverable. Do not split trivial output items among workers.
+2. Split substantial independent sections into separate subtasks. A section is
+   substantial when it needs its own research, analysis, implementation, or
+   meaningful written output. Independently researched sections remain separate
+   even when they will be assembled into a single guide or report.
+3. Choose the count that matches those independent work units: two units means
+   two subtasks, three means three, and so on up to five. Do not default a
+   multi-section research task to one subtask just because one worker could do it.
+   If there are more than five units, group related units into at most five
+   independently executable subtasks without dropping any requested work.
+4. Every subtask must be completable from the original request without waiting
+   for another worker's output. Include all relevant shared constraints in each
+   subtask. Merge dependent or overlapping work into the same subtask.
+5. Do not invent extra planning, research, review, summary, or validation jobs.
+   Include necessary preparation and self-checking within each requested deliverable.
+6. Preserve the exact requested scope, quantities, lengths, sources, and formatting.
+   A requested item count is not automatically a subtask count. Do not add output
+   requirements that the user did not request or that the work does not require.
+7. Make each objective and acceptance criterion specific to its assigned output.
+   Avoid generic criteria such as "fulfils the original request" when concrete
+   requirements can be extracted from the request.
+8. Divide the full budget (${budget} ETH) proportionally across the chosen
+   subtasks. Rewards must sum to ${budget} ETH. One subtask receives the
+   entire budget. Budget size alone must not determine the number of subtasks.
+
+Calibration examples:
+- "Give me 2 prime numbers between 0 and 100, only numbers."
+  -> ONE subtask delivering exactly two prime numbers in range and no extra text.
+- "Suggest 10 names for a coffee shop."
+  -> ONE subtask delivering ten names, not ten trivial subtasks.
+- "Write independent 200-300-word beginner guides to solar, wind, hydroelectric,
+  and geothermal energy. Each must explain how it works, advantages, limitations,
+  and common uses, with two credible sources per energy type."
+  -> FOUR subtasks: solar, wind, hydroelectric, and geothermal.
+  Each subtask requires its own 200-300-word section, all four requested topics,
+  and two credible sources. Do not combine these four substantial sections into
+  one task or add separate research and review tasks.
+- "Summarize this article in 150 words" followed by a long article.
+  -> ONE subtask; a long input does not imply multiple deliverables.
+
+Check silently before returning: all requested work is covered, substantial
+independent sections are separated, trivial items are grouped, and no subtask
+depends on another's output. Do not include this reasoning in the response.
 
 Each subtask is a paid contract executed by a stranger who has never seen this
 conversation and cannot ask questions. Write it so that is possible:
 
-- "objective": 2-4 sentences. What to produce and why it matters. Be concrete about
+- "objective": 1-4 sentences, scaled to the work. What to produce and why it matters. Be concrete about
   scope, quantity, and depth. Never just restate the label.
 - "contextNotes": anything the worker needs but could not guess - domain constraints,
   the audience, tools, sources to prefer or avoid. Empty string if genuinely none.
-- "steps": 3-6 short imperative steps describing a sensible approach.
-- "acceptanceCriteria": 3-6 criteria that are OBJECTIVELY CHECKABLE by reading the
+- "steps": 1-6 short imperative steps, only as many as the work needs.
+- "acceptanceCriteria": 1-6 necessary criteria that are OBJECTIVELY CHECKABLE by reading the
   submission alone. Each must be independently verifiable and carry a concrete,
   countable bar where possible ("covers at least 5 protocols", "every claim cites a
   source URL", "table has columns X, Y, Z"). Never write vague criteria such as
   "good quality" or "well written".
 - "deliverableFormat": the exact shape of the output (e.g. "Markdown report,
   600-900 words, with a summary table and a Sources section").
-- "skills": 2-4 short skill tags (e.g. "research", "solidity", "data-analysis").
+- "skills": 1-4 relevant short skill tags (e.g. "research", "solidity", "data-analysis").
 - "estimatedMinutes": realistic focused working minutes.
 - "leaseDuration": seconds a worker gets to finish after claiming (300-7200),
   generously larger than estimatedMinutes * 60.
-- "reward": MON for this subtask. All rewards together must not exceed ${budget}.
+- "reward": ETH for this subtask. All rewards together must not exceed ${budget}.
 
 Also return the master framing:
 - "masterObjective": one paragraph restating the overall goal precisely.
 - "masterContext": constraints that apply across all subtasks. Empty string if none.
-- "successCriteria": 3-5 checkable criteria for the combined final deliverable.
+- "successCriteria": 1-5 necessary, checkable criteria for the final deliverable.
 
 Return ONLY valid JSON, no markdown fences, no commentary:
 {
@@ -82,95 +129,47 @@ Return ONLY valid JSON, no markdown fences, no commentary:
 `;
 }
 
-/// Deterministic decomposition used when Gemini is unavailable or returns junk.
-/// Still produces real acceptance criteria so the verifier has something to grade.
+/// Preserve the complete request as one work unit if AI decomposition fails.
+/// Without a usable model response, inventing independent work would add scope.
 function buildFallback(masterTaskText: string, budget: string) {
-  const numBudget = parseFloat(budget) || 10;
-  const share = parseFloat((numBudget / 3).toFixed(4));
-  const remainder = parseFloat((numBudget - share * 2).toFixed(4));
-  const topic = masterTaskText.slice(0, 160);
+  const numBudget = parseFloat(budget) || 0;
+  const acceptanceCriteria = [
+    "The submission fulfils the complete original request.",
+    "The submission respects all requested quantities, constraints, and output formatting."
+  ];
 
   return {
     masterTask: masterTaskText || "Master Task Specification",
     masterObjective: masterTaskText,
     masterContext: "",
-    successCriteria: [
-      "All three phases are delivered and internally consistent.",
-      "The final output directly answers the original request.",
-      "No placeholder or TODO content remains."
-    ],
+    successCriteria: acceptanceCriteria,
     subtasks: [
       {
-        rangeLabel: "Phase 1: Research & Scoping",
-        objective: `Gather the source material and define the scope needed to deliver: ${topic}. Produce a structured research brief that a second worker can execute against without repeating the research.`,
-        contextNotes: "Prefer primary sources. Note explicitly where evidence is thin.",
-        steps: [
-          "Identify the key questions the master task implies.",
-          "Collect and cite at least 5 credible sources.",
-          "Summarise findings into a structured brief.",
-          "Flag open questions and assumptions."
-        ],
-        acceptanceCriteria: [
-          "Cites at least 5 distinct credible sources with URLs.",
-          "Contains a scope section listing what is in and out of scope.",
-          "Findings are organised under headed sections, not one block of prose.",
-          "Lists at least 2 open questions or stated assumptions."
-        ],
-        deliverableFormat: "Markdown brief, 400-800 words, with a Sources section.",
-        skills: ["research", "writing"],
-        estimatedMinutes: 45,
-        reward: share,
-        leaseDuration: 3600
-      },
-      {
-        rangeLabel: "Phase 2: Core Execution",
-        objective: `Produce the main deliverable for: ${topic}. This is the substantive body of work - analysis, implementation, or content depending on the request.`,
+        rangeLabel: "Complete the requested task",
+        objective: masterTaskText,
         contextNotes: "",
-        steps: [
-          "Restate the deliverable's target shape before starting.",
-          "Produce the core content or analysis.",
-          "Support each claim with concrete evidence or reasoning.",
-          "Self-review against the acceptance criteria before submitting."
-        ],
-        acceptanceCriteria: [
-          "Deliverable directly fulfils the master task's core ask.",
-          "At least 600 words, or the equivalent depth as a non-prose artifact.",
-          "Every substantive claim is supported by evidence or explicit reasoning.",
-          "No placeholders, TODOs, or truncated sections."
-        ],
-        deliverableFormat: "Markdown document with headed sections.",
-        skills: ["analysis", "writing"],
-        estimatedMinutes: 90,
-        reward: share,
+        steps: ["Produce the requested deliverable and check it against the original request."],
+        acceptanceCriteria,
+        deliverableFormat: "Use the format requested in the original task; otherwise use the simplest suitable format.",
+        skills: [],
+        reward: numBudget,
         leaseDuration: 7200
-      },
-      {
-        rangeLabel: "Phase 3: QA Review & Summary",
-        objective: `Validate the technical accuracy of the work on "${topic}", correct errors, and produce an executive summary suitable for a decision-maker.`,
-        contextNotes: "Report problems found rather than silently fixing and hiding them.",
-        steps: [
-          "Check factual and numerical accuracy.",
-          "Verify formatting and structural consistency.",
-          "Write an executive summary.",
-          "List issues found and their resolution."
-        ],
-        acceptanceCriteria: [
-          "Includes an executive summary of 150-250 words.",
-          "Lists every issue found with its severity and resolution.",
-          "Explicitly confirms or disputes each factual claim checked.",
-          "States a clear overall pass/fail recommendation with reasoning."
-        ],
-        deliverableFormat: "Markdown QA report with an Executive Summary section and an Issues table.",
-        skills: ["qa", "editing"],
-        estimatedMinutes: 40,
-        reward: remainder > 0 ? remainder : share,
-        leaseDuration: 3600
       }
     ]
   };
 }
 
 router.post("/", async (req, res) => {
+  const startedAt = performance.now();
+  const timings: Record<string, number> = {};
+  async function timed<T>(stage: string, work: () => Promise<T>): Promise<T> {
+    const stageStartedAt = performance.now();
+    try {
+      return await work();
+    } finally {
+      timings[stage] = Math.round(performance.now() - stageStartedAt);
+    }
+  }
   try {
     const parsed = DecomposeRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -180,7 +179,7 @@ router.post("/", async (req, res) => {
     const { descriptionCID, budget, aiModel } = parsed.data;
 
     console.log(`\n[Orchestrator] Decomposing task using model "${aiModel || "default"}"...`);
-    const masterTaskText = await fetchFromIPFS(descriptionCID);
+    const masterTaskText = await timed("descriptionFetchMs", () => fetchFromIPFS(descriptionCID));
     if (!masterTaskText.trim()) {
       // Decomposing a CID string instead of the brief produces garbage subtasks,
       // so fail loudly rather than letting it through.
@@ -192,11 +191,16 @@ router.post("/", async (req, res) => {
     let parsedJson: any = null;
 
     try {
-      const text = await generateWithGemini(buildPrompt(masterTaskText, budget), aiModel);
+      const text = await timed("geminiMs", () =>
+        generateWithGemini(buildPrompt(masterTaskText, budget), aiModel, {
+          attemptTimeoutMs: 30000,
+          totalTimeoutMs: 45000
+        })
+      );
       const cleanJson = text.trim().replace(/```json/gi, "").replace(/```/g, "").trim();
       parsedJson = JSON.parse(cleanJson);
-      if (!Array.isArray(parsedJson?.subtasks) || parsedJson.subtasks.length === 0) {
-        throw new Error("Model returned no subtasks");
+      if (!Array.isArray(parsedJson?.subtasks) || parsedJson.subtasks.length === 0 || parsedJson.subtasks.length > 5) {
+        throw new Error("Model must return between 1 and 5 subtasks");
       }
     } catch (aiErr) {
       console.warn("[Decompose] Gemini AI decomposition fallback triggered:", aiErr);
@@ -225,30 +229,37 @@ router.post("/", async (req, res) => {
       contextNotes: masterContext,
       successCriteria
     });
-    const masterTaskCID = await pinToIPFS(masterMarkdown);
-    await saveSpecDraft(masterTaskCID, "MASTER", {
-      title: "Master Task",
-      objective: masterObjective,
-      contextNotes: masterContext,
-      acceptanceCriteria: successCriteria,
-      markdown: masterMarkdown
-    });
-
-    for (const spec of specs) {
-      const markdown = renderSubtaskSpecMarkdown(spec, masterObjective);
-      spec.description = markdown;
-      spec.descriptionCID = await pinToIPFS(markdown);
-      await saveSpecDraft(spec.descriptionCID, "SUBTASK", {
-        title: spec.rangeLabel,
-        objective: spec.objective,
-        contextNotes: spec.contextNotes,
-        acceptanceCriteria: spec.acceptanceCriteria,
-        deliverableFormat: spec.deliverableFormat,
-        skills: spec.skills,
-        estimatedMinutes: spec.estimatedMinutes,
-        markdown
-      });
-    }
+    // Each spec is independent: pin and persist them concurrently, keeping
+    // each draft write after its own CID is available. Await all before responding.
+    const [masterTaskCID] = await timed("specPersistenceMs", () => Promise.all([
+      (async () => {
+        const cid = await pinToIPFS(masterMarkdown);
+        await saveSpecDraft(cid, "MASTER", {
+          title: "Master Task",
+          objective: masterObjective,
+          contextNotes: masterContext,
+          acceptanceCriteria: successCriteria,
+          markdown: masterMarkdown
+        });
+        return cid;
+      })(),
+      ...specs.map(async (spec) => {
+        const markdown = renderSubtaskSpecMarkdown(spec, masterObjective);
+        spec.description = markdown;
+        spec.descriptionCID = await pinToIPFS(markdown);
+        await saveSpecDraft(spec.descriptionCID, "SUBTASK", {
+          title: spec.rangeLabel,
+          objective: spec.objective,
+          contextNotes: spec.contextNotes,
+          acceptanceCriteria: spec.acceptanceCriteria,
+          deliverableFormat: spec.deliverableFormat,
+          skills: spec.skills,
+          estimatedMinutes: spec.estimatedMinutes,
+          markdown
+        });
+        return spec.descriptionCID;
+      })
+    ]));
 
     res.json({
       masterTask: parsedJson.masterTask || masterTaskText,
@@ -261,6 +272,11 @@ router.post("/", async (req, res) => {
   } catch (error: any) {
     console.error("Error in decompose:", error);
     res.status(500).json({ error: error?.message || "Internal server error" });
+  } finally {
+    console.log("[Decompose] Timings:", {
+      ...timings,
+      totalMs: Math.round(performance.now() - startedAt)
+    });
   }
 });
 

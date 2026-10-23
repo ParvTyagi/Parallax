@@ -8,6 +8,8 @@ const web3 = vi.hoisted(() => ({
   account: null as string | null,
   balance: null as string | null,
   taskManager: null,
+  currencySymbol: "ETH",
+  networkName: "Ethereum Sepolia",
   connectWallet: vi.fn(),
 }));
 
@@ -99,20 +101,20 @@ describe("CustomerDashboard create-task validation", () => {
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
 
-    expect(screen.getByRole("alert")).toHaveTextContent(/greater than 0 MON/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/greater than 0 ETH/i);
   });
 
   it("says what is missing while the form is incomplete", () => {
     renderDashboard();
     expect(screen.getByText(/add a job description first/i)).toBeInTheDocument();
 
-    typeInto(description(), "Research the top 5 lending protocols on Monad and compare fees.");
-    expect(screen.getByText(/set a budget in mon/i)).toBeInTheDocument();
+    typeInto(description(), "Research the top 5 lending protocols on Ethereum and compare fees.");
+    expect(screen.getByText(/set a budget in eth/i)).toBeInTheDocument();
   });
 
   it("confirms nothing is spent yet once the form is valid", () => {
     renderDashboard();
-    typeInto(description(), "Research the top 5 lending protocols on Monad and compare fees.");
+    typeInto(description(), "Research the top 5 lending protocols on Ethereum and compare fees.");
     typeInto(budget(), "3");
 
     expect(screen.getByText(/nothing is spent yet/i)).toBeInTheDocument();
@@ -122,14 +124,14 @@ describe("CustomerDashboard create-task validation", () => {
     renderDashboard();
     typeInto(budget(), "15");
 
-    expect(screen.getByText(/3–5 subtasks/)).toHaveTextContent("3.00–5.00 MON each");
+    expect(screen.getByText(/3–5 subtasks/)).toHaveTextContent("3.0000–5.0000 ETH each");
   });
 
   it("warns when the budget exceeds the wallet balance", () => {
     renderDashboard();
     typeInto(budget(), "12");
 
-    expect(screen.getByText(/more than your 5.0 MON balance/i)).toBeInTheDocument();
+    expect(screen.getByText(/more than your 5.0 ETH balance/i)).toBeInTheDocument();
   });
 
   it("does not warn when the budget fits the balance", () => {

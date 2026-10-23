@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { prisma } from "../db/client";
 import { fetchFromIPFS } from "../lib/ipfs";
-import { syncTransaction } from "../lib/chain";
+import { isTaskManagerAdmin, syncTransaction } from "../lib/chain";
+import { requestWallet } from "../lib/privateAccess";
+import { getPrivateSubmission } from "../lib/privateSubmissions";
+import { activeTaskFilter, getTaskDeployment } from "../lib/deployments";
 import { z } from "zod";
 
 const router = Router();
@@ -14,32 +17,53 @@ const router = Router();
 /// dashboards were showing instead of the brief. `descriptionCID` always carries
 /// the raw pointer, and `descriptionResolved` tells the UI whether to show a
 /// placeholder.
-async function resolveSubtaskText(st: any) {
+async function resolveSubtaskText(st: any, canReadSubmission = false) {
   if (!st) return st;
   const descText = await fetchFromIPFS(st.description);
   let submissionContent = "";
-  if (st.submissions && st.submissions.length > 0) {
-    submissionContent = await fetchFromIPFS(st.submissions[0].storagePath || st.submissions[0].contentHash);
+  if (canReadSubmission && st.submissions && st.submissions.length > 0) {
+    const stored = st.submissions[0];
+    if (stored.storagePath?.startsWith("supabase:")) {
+      submissionContent = await getPrivateSubmission(stored.storagePath.slice("supabase:".length)) ?? "";
+    } else if (stored.storagePath) {
+      submissionContent = await fetchFromIPFS(stored.storagePath);
+    }
   }
+  const { submissions, submissionHash, submissionCID, ...publicFields } = st;
+  const taskDeployment = st.task ? getTaskDeployment(st.task.contractAddress) : null;
   return {
-    ...st,
+    ...publicFields,
+    ...(taskDeployment ? { task: {
+      ...st.task,
+      contractAddress: taskDeployment.taskManagerAddress,
+      escrowAddress: st.task.escrowAddress || taskDeployment.escrowAddress
+    } } : {}),
     description: descText,
     descriptionCID: st.description,
     descriptionResolved: Boolean(descText),
-    submissionContent
+    ...(canReadSubmission ? { submissions, submissionHash, submissionCID, submissionContent } : {})
   };
 }
 
-async function resolveTaskText(task: any) {
+async function resolveTaskText(task: any, viewer: string | null = null, isAdmin = false) {
   if (!task) return task;
+  const deployment = getTaskDeployment(task.contractAddress);
   const taskDescText = await fetchFromIPFS(task.description);
-  const resolvedSubtasks = await Promise.all((task.subtasks || []).map(resolveSubtaskText));
+  const canReadSolution = isAdmin || Boolean(viewer && task.creator?.toLowerCase() === viewer.toLowerCase());
+  const { solution, ...taskFields } = task;
   return {
-    ...task,
+    ...taskFields,
+    contractAddress: deployment.taskManagerAddress,
+    escrowAddress: task.escrowAddress || deployment.escrowAddress,
+    ...(canReadSolution && solution != null ? { solution } : {}),
     description: taskDescText,
     descriptionCID: task.description,
     descriptionResolved: Boolean(taskDescText),
-    subtasks: resolvedSubtasks
+    subtasks: await Promise.all((task.subtasks || []).map((st: any) =>
+      resolveSubtaskText(st, isAdmin || Boolean(viewer && (
+        task.creator?.toLowerCase() === viewer.toLowerCase() || st.worker?.toLowerCase() === viewer.toLowerCase()
+      )))
+    ))
   };
 }
 
@@ -73,7 +97,7 @@ router.post("/sync", async (req, res) => {
 router.get(["/open-subtasks", "/subtasks/open"], async (req, res) => {
   try {
     const subtasks = await prisma.subtask.findMany({
-      where: { worker: null, state: "CREATED", task: { status: { notIn: ["CANCELLED", "COMPLETED"] } } },
+      where: { worker: null, state: "CREATED", task: { ...activeTaskFilter(), status: { notIn: ["CANCELLED", "COMPLETED"] } } },
       include: { task: true },
       orderBy: { createdAt: "desc" }
     });
@@ -108,12 +132,19 @@ router.get(["/open-subtasks", "/subtasks/open"], async (req, res) => {
 router.get("/customer/:address", async (req, res) => {
   try {
     const { address } = req.params;
+    const viewer = requestWallet(req);
+    const isAdmin = viewer ? await isTaskManagerAdmin(viewer) : false;
     const tasks = await prisma.task.findMany({
-      where: { creator: addressFilter(address) },
+      where: { ...activeTaskFilter(), creator: addressFilter(address) },
       orderBy: { createdAt: "desc" },
-      include: { subtasks: { orderBy: { createdAt: "asc" } } }
+      include: {
+        subtasks: {
+          orderBy: { createdAt: "asc" },
+          include: { submissions: { orderBy: { createdAt: "desc" }, take: 1 } }
+        }
+      }
     });
-    const resolved = await Promise.all(tasks.map(resolveTaskText));
+    const resolved = await Promise.all(tasks.map((task) => resolveTaskText(task, viewer, isAdmin)));
     res.json(resolved);
   } catch (error) {
     console.error("Error fetching customer tasks:", error);
@@ -121,16 +152,24 @@ router.get("/customer/:address", async (req, res) => {
   }
 });
 
-// Get all subtasks claimed by a specific worker
+// Get all subtasks claimed by a specific worker (excluding forfeited/reopened or cancelled ones)
 router.get("/worker/:address", async (req, res) => {
   try {
     const { address } = req.params;
+    const viewer = requestWallet(req);
+    const isAdmin = viewer ? await isTaskManagerAdmin(viewer) : false;
     const subtasks = await prisma.subtask.findMany({
-      where: { worker: addressFilter(address) },
+      where: {
+        worker: addressFilter(address),
+        task: activeTaskFilter(),
+        state: { notIn: ["CREATED", "CANCELLED"] }
+      },
       orderBy: { createdAt: "desc" },
-      include: { task: true }
+      include: { task: true, submissions: { orderBy: { createdAt: "desc" }, take: 1 } }
     });
-    const resolved = await Promise.all(subtasks.map(resolveSubtaskText));
+    const resolved = await Promise.all(subtasks.map((st) =>
+      resolveSubtaskText(st, isAdmin || Boolean(viewer && viewer.toLowerCase() === st.worker?.toLowerCase()))
+    ));
     res.json(resolved);
   } catch (error) {
     console.error("Error fetching worker tasks:", error);
@@ -141,12 +180,15 @@ router.get("/worker/:address", async (req, res) => {
 // Get all subtasks currently disputed, for the admin resolution queue
 router.get("/disputes/open", async (req, res) => {
   try {
+    const viewer = requestWallet(req);
+    const isAdmin = viewer ? await isTaskManagerAdmin(viewer) : false;
+    if (!isAdmin) return res.status(403).json({ error: "Administrator access required." });
     const subtasks = await prisma.subtask.findMany({
-      where: { state: "IN_DISPUTE" },
+      where: { state: "IN_DISPUTE", task: activeTaskFilter() },
       orderBy: { createdAt: "desc" },
-      include: { task: true }
+      include: { task: true, submissions: { orderBy: { createdAt: "desc" }, take: 1 } }
     });
-    const resolved = await Promise.all(subtasks.map(resolveSubtaskText));
+    const resolved = await Promise.all(subtasks.map((st) => resolveSubtaskText(st, true)));
     res.json(resolved);
   } catch (error) {
     console.error("Error fetching open disputes:", error);
@@ -158,8 +200,8 @@ router.get("/disputes/open", async (req, res) => {
 router.get("/:taskId", async (req, res) => {
   try {
     const { taskId } = req.params;
-    const task = await prisma.task.findUnique({
-      where: { taskId },
+    const task = await prisma.task.findFirst({
+      where: { taskId, ...activeTaskFilter() },
       include: {
         subtasks: {
           orderBy: { createdAt: "asc" },
@@ -169,7 +211,9 @@ router.get("/:taskId", async (req, res) => {
     });
 
     if (!task) return res.status(404).json({ error: "Task not found" });
-    const resolved = await resolveTaskText(task);
+    const viewer = requestWallet(req);
+    const isAdmin = viewer ? await isTaskManagerAdmin(viewer) : false;
+    const resolved = await resolveTaskText(task, viewer, isAdmin);
     res.json(resolved);
   } catch (error) {
     console.error("Error fetching task:", error);
@@ -201,17 +245,21 @@ workersRouter.get("/:address", async (req, res) => {
     }
 
     const claimedSubtasks = await prisma.subtask.findMany({
-      where: { worker: addressFilter(address) },
+      where: {
+        worker: addressFilter(address),
+        task: activeTaskFilter(),
+        state: { notIn: ["CREATED", "CANCELLED"] }
+      },
       orderBy: { createdAt: "desc" },
       include: { task: true }
     });
 
-    const resolvedSubtasks = await Promise.all(claimedSubtasks.map(resolveSubtaskText));
+    const resolvedSubtasks = await Promise.all(claimedSubtasks.map((st) => resolveSubtaskText(st)));
 
     // Bonds still locked on-chain: any subtask this worker holds that hasn't reached a final,
     // bond-released state yet.
     const activeBondTotal = claimedSubtasks
-      .filter((st) => ["CLAIMED", "SUBMITTED", "PENDING_RELEASE", "IN_DISPUTE"].includes(st.state))
+      .filter((st) => ["CLAIMED", "SUBMITTED", "VERIFICATION_FAILED", "IN_DISPUTE"].includes(st.state))
       .reduce((sum, st) => sum + Number(st.bondAmount || 0), 0);
 
     res.json({

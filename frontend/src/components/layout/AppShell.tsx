@@ -6,28 +6,32 @@ import { useWeb3 } from "../../contexts/Web3Context";
 import { Copy, Check, LogOut, ChevronDown, Wallet } from "lucide-react";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const { account, balance, connectWallet, disconnectWallet, isConnecting } = useWeb3();
+  const { account, balance, connectWallet, disconnectWallet, isConnecting, networkName, currencySymbol } = useWeb3();
   const location = useLocation();
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
 
-  const copyAddress = () => {
+  const copyAddress = async () => {
     if (!account) return;
-    navigator.clipboard.writeText(account);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(account);
+      setCopied(true); setCopyError("");
+      setTimeout(() => setCopied(false), 2000);
+    } catch { setCopyError("Could not copy. Your address is available in your profile."); }
   };
 
   const getPageTitle = () => {
-    if (location.pathname === "/app") return "Post a Project";
-    if (location.pathname === "/worker") return "Freelancer Marketplace";
+    if (location.pathname === "/creator/dashboard") return "Overview";
+    if (location.pathname === "/app" || location.pathname === "/creator/new") return "Create a project";
+    if (location.pathname === "/worker" || location.pathname === "/worker/explore") return "Find work";
     if (location.pathname.startsWith("/worker/")) return "Worker Profile";
-    if (location.pathname.startsWith("/task/")) return "Task Execution Graph";
-    if (location.pathname === "/admin") return "Protocol Treasury";
+    if (location.pathname.startsWith("/task/") || location.pathname.startsWith("/workspace/")) return "Project details";
+    if (location.pathname === "/admin") return "Protocol operations";
     return "Dashboard";
   };
 
   return (
-    <div data-theme="parallax" className="min-h-screen bg-base-200 flex text-base-content antialiased">
+    <div data-theme="parallax" className="workspace-shell min-h-screen bg-base-200 flex text-base-content antialiased">
       {/* Lets a keyboard user reach the page without tabbing the whole sidebar. */}
       <a
         href="#main-content"
@@ -37,14 +41,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </a>
 
       {/* Desktop Sidebar */}
-      <div className="hidden md:block shrink-0">
+      <div className="desktop-sidebar shrink-0">
         <Sidebar />
       </div>
 
       {/* Main Column */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* ─── Desktop Top Bar ─── */}
-        <header className="navbar hidden md:flex bg-base-100/90 backdrop-blur-md border-b border-base-300 sticky top-0 z-30 px-8 min-h-16 justify-between">
+        <header className="workspace-topbar navbar hidden md:flex bg-base-100/90 backdrop-blur-md border-b border-base-300 sticky top-0 z-30 px-8 min-h-16 justify-between">
           <nav aria-label="Breadcrumb" className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-base-content/60">
               <span className="font-semibold text-base-content/80">Parallax</span>
@@ -61,34 +65,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="relative flex h-2 w-2">
                 <span
                   aria-hidden="true"
-                  className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-success opacity-75"
+                  className="absolute inline-flex h-full w-full rounded-full bg-success opacity-20"
                 />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
               </span>
-              <span>Monad Testnet</span>
+              <span>{networkName || "Ethereum Sepolia"}</span>
             </div>
 
             {/* Wallet Balance & Account Button */}
             {account ? (
-              <div className="dropdown dropdown-end">
-                <div
-                  tabIndex={0}
-                  role="button"
-                  aria-haspopup="menu"
+              <details className="dropdown dropdown-end" onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}>
+                <summary
                   aria-label={`Wallet menu for ${account.slice(0, 6)}…${account.slice(-4)}`}
                   className="flex items-center gap-2.5 bg-base-100 hover:bg-base-200 border border-base-300/90 px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   {balance !== null && (
                     <span className="text-xs font-mono font-bold text-base-content border-r border-base-300 pr-2.5">
-                      {balance} MON
+                      {balance} {currencySymbol || "ETH"}
                     </span>
                   )}
-                  <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-purple-600 to-amber-500 shrink-0" />
+                  <div className="w-5 h-5 rounded-full bg-indigo-100 border border-indigo-200 shrink-0" />
                   <span className="text-xs font-mono font-medium text-base-content">
                     {account.slice(0, 6)}…{account.slice(-4)}
                   </span>
                   <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 text-base-content/60" />
-                </div>
+                </summary>
                 <ul
                   tabIndex={0}
                   className="dropdown-content menu p-2 shadow-xl bg-base-100 border border-base-300 rounded-xl w-56 mt-2 text-xs space-y-1 z-50"
@@ -113,7 +114,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       View My Profile
                     </Link>
                   </li>
-                  <div className="divider my-1 opacity-40" />
+                  <li role="separator" className="border-t border-base-300 my-1" />
                   <li>
                     <button
                       onClick={disconnectWallet}
@@ -124,7 +125,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </button>
                   </li>
                 </ul>
-              </div>
+              </details>
             ) : (
               <button
                 onClick={connectWallet}
@@ -143,18 +144,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* ─── Mobile top bar ─── */}
-        <div className="block md:hidden">
+        <div className="mobile-header-container">
           <MobileNav />
         </div>
 
         {/* ─── Main Viewport Content ─── */}
-        <main id="main-content" tabIndex={-1} className="flex-1 p-5 md:p-8 lg:p-10 overflow-y-auto focus:outline-none">
+        <main id="main-content" tabIndex={-1} className="workspace-main flex-1 min-w-0 focus:outline-none">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>
         </main>
       </div>
 
+      {copyError && <div role="alert" className="fixed bottom-4 right-4 left-4 md:left-auto z-50 alert alert-error max-w-md">{copyError}<button className="btn btn-ghost btn-sm" onClick={() => setCopyError("")}>Dismiss</button></div>}
       <span role="status" aria-live="polite" className="sr-only">
         {copied ? "Wallet address copied to clipboard" : ""}
       </span>
