@@ -23,14 +23,14 @@ export function getOrchestratorContract(address?: string | null): ethers.Contrac
   if (existing) return existing;
 
   const rpcUrl =
-    process.env.ETH_RPC_URL ||
-    process.env.ETHEREUM_RPC_URL ||
+    process.env.MONAD_RPC_URL ||
     process.env.RPC_URL ||
-    process.env.MONAD_RPC_URL;
+    process.env.ETH_RPC_URL ||
+    process.env.ETHEREUM_RPC_URL;
   const pk = process.env.ORCHESTRATOR_PRIVATE_KEY;
 
   if (!rpcUrl || !pk || !taskManagerAddress) {
-    throw new Error("Missing orchestrator credentials (need ETH_RPC_URL/RPC_URL, ORCHESTRATOR_PRIVATE_KEY, TASKMANAGER_ADDRESS)");
+    throw new Error("Missing orchestrator credentials (need MONAD_RPC_URL/RPC_URL, ORCHESTRATOR_PRIVATE_KEY, TASKMANAGER_ADDRESS)");
   }
 
   const formattedPk = pk.startsWith("0x") ? pk : `0x${pk}`;

@@ -25,7 +25,7 @@ const STATE_BADGE: Record<string, { label: string; cls: string }> = {
 const WorkerProfile = () => {
   const { address } = useParams<{ address: string }>();
   const { account, currencySymbol } = useWeb3();
-  const currency = currencySymbol || "ETH";
+  const currency = currencySymbol || "MON";
   const [profile, setProfile] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

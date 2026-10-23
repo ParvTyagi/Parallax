@@ -234,7 +234,7 @@ Return ONLY valid JSON, no markdown fences:
     };
   } catch (err: any) {
     // Never approve work the AI could not actually grade: this verdict releases
-    // escrowed ETH. Throwing leaves the job to retry and the subtask SUBMITTED
+    // escrowed MON. Throwing leaves the job to retry and the subtask SUBMITTED
     // with no transaction sent — stuck and visible beats wrongly paid.
     console.error("[Verify] Verification could not be completed:", err?.message || err);
     throw new Error(`AI verification unavailable: ${err?.message || err}`);

@@ -11,7 +11,7 @@ contract ParallaxTaskManager {
 
     uint256 public constant DISPUTE_WINDOW = 0;
     uint8 public constant VERIFICATION_THRESHOLD = 70;
-    // Minimum ETH a worker must bond to claim a subtask. Slashed on failure/spam, returned on
+    // Minimum MON a worker must bond to claim a subtask. Slashed on failure/spam, returned on
     // successful verification. Admin-tunable to keep the stake proportional to gas costs.
     uint256 public workerBondAmount = 0.001 ether;
 
@@ -179,7 +179,7 @@ contract ParallaxTaskManager {
         emit TaskCancelled(taskId, msg.sender, refundable);
     }
 
-    /// @notice Claims a subtask. Requires the caller to post an ETH bond, slashed on failure/spam
+    /// @notice Claims a subtask. Requires the caller to post an MON bond, slashed on failure/spam
     /// and returned immediately when the work is verified.
     function claimSubtask(bytes32 taskId, bytes32 subtaskId) external payable {
         Task storage task = tasks[taskId];

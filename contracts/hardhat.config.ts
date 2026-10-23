@@ -34,8 +34,8 @@ const config: HardhatUserConfig = {
       accounts,
     },
     monadTestnet: {
-      url: process.env.MONAD_RPC_URL || "",
-      chainId: process.env.MONAD_CHAIN_ID ? parseInt(process.env.MONAD_CHAIN_ID) : 10143,
+      url: process.env.MONAD_RPC_URL || "https://testnet-rpc.monad.xyz",
+      chainId: 10143,
       accounts,
     },
   },

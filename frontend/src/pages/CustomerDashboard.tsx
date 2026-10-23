@@ -42,7 +42,7 @@ function deriveTaskStatus(subtasks: any[], taskStatus?: string): { label: string
 
 const CustomerDashboard = () => {
   const { account, balance, taskManager, provider, connectWallet, currencySymbol, networkName } = useWeb3();
-  const currency = currencySymbol || "ETH";
+  const currency = currencySymbol || "MON";
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -516,7 +516,7 @@ const CustomerDashboard = () => {
                   aria-describedby="task-description-hint"
                   rows={5}
                   className="textarea textarea-bordered w-full text-sm leading-relaxed focus:textarea-primary"
-                  placeholder="e.g. Conduct a comprehensive security and architecture analysis of the top 5 DeFi lending protocols on Ethereum. Provide an executive summary and comparative risk matrix in Markdown..."
+                  placeholder="e.g. Conduct a comprehensive security and architecture analysis of the top 5 DeFi lending protocols on Monad testnet. Provide an executive summary and comparative risk matrix in Markdown..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   disabled={isProcessing}
@@ -569,7 +569,7 @@ const CustomerDashboard = () => {
                   />
                 </div>
                 <p id="task-budget-hint" className="text-[11px] text-base-content/60">
-                  Escrowed on Ethereum & split across generated subtasks. Workers post an {currency} claim bond.
+                  Escrowed on Monad testnet & split across generated subtasks. Workers post an {currency} claim bond.
                 </p>
 
                 {perSubtask && (
@@ -765,7 +765,7 @@ const CustomerDashboard = () => {
                 </div>
                 <h3 className="text-base font-bold text-base-content">Connect Wallet</h3>
                 <p className="text-xs text-base-content/60 leading-relaxed">
-                  Connect your Web3 wallet to manage your project escrows on Ethereum.
+                  Connect your Web3 wallet to manage your project escrows on Monad testnet.
                 </p>
                 <button onClick={connectWallet} className="btn btn-neutral btn-sm font-semibold">
                   Connect Wallet

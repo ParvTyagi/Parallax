@@ -20,14 +20,14 @@ const DecomposeRequestSchema = z.object({
 
 function buildPrompt(masterTaskText: string, budget: string) {
   return `
-You are the task orchestrator for Parallax, a decentralized microtasking network on Ethereum.
+You are the task orchestrator for Parallax, a decentralized microtasking network on Monad testnet.
 A customer wants this master task done:
 
 <master_task>
 ${masterTaskText}
 </master_task>
 
-Total budget: ${budget} ETH.
+Total budget: ${budget} MON.
 
 Determine the number of subtasks from the requested deliverables, their complexity,
 and whether they can be completed independently. Choose between 1 and 5 subtasks.
@@ -56,8 +56,8 @@ Before writing the JSON, identify the requested outputs and apply these rules:
 7. Make each objective and acceptance criterion specific to its assigned output.
    Avoid generic criteria such as "fulfils the original request" when concrete
    requirements can be extracted from the request.
-8. Divide the full budget (${budget} ETH) proportionally across the chosen
-   subtasks. Rewards must sum to ${budget} ETH. One subtask receives the
+8. Divide the full budget (${budget} MON) proportionally across the chosen
+   subtasks. Rewards must sum to ${budget} MON. One subtask receives the
    entire budget. Budget size alone must not determine the number of subtasks.
 
 Calibration examples:
@@ -98,7 +98,7 @@ conversation and cannot ask questions. Write it so that is possible:
 - "estimatedMinutes": realistic focused working minutes.
 - "leaseDuration": seconds a worker gets to finish after claiming (300-7200),
   generously larger than estimatedMinutes * 60.
-- "reward": ETH for this subtask. All rewards together must not exceed ${budget}.
+- "reward": MON for this subtask. All rewards together must not exceed ${budget}.
 
 Also return the master framing:
 - "masterObjective": one paragraph restating the overall goal precisely.

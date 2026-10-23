@@ -15,7 +15,7 @@ import {
 
 export default function AdminDashboard() {
   const { account, taskManager, currencySymbol, connectWallet, isConnecting } = useWeb3();
-  const currency = currencySymbol || "ETH";
+  const currency = currencySymbol || "MON";
   const [balance, setBalance] = useState("0.00");
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
@@ -141,7 +141,7 @@ export default function AdminDashboard() {
             Protocol operations
           </h1>
           <p className="text-xs md:text-sm text-base-content/60 mt-0.5">
-            Dispute resolution, bond configuration, and protocol revenue on Ethereum.
+            Dispute resolution, bond configuration, and protocol revenue on Monad testnet.
           </p>
         </div>
       </div>

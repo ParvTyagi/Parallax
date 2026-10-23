@@ -63,11 +63,12 @@ const CHAIN_CONFIGS: Record<string, any> = {
   "0x7A69": LOCALHOST_CONFIG,
 };
 
-export const TARGET_CHAIN_ID = ETH_CHAIN_ID;
+export const TARGET_CHAIN_ID = `0x${BigInt(ETH_CHAIN_ID).toString(16)}`;
+const TARGET_CHAIN_CONFIG = CHAIN_CONFIGS[TARGET_CHAIN_ID] || MONAD_TESTNET_CONFIG;
 
 export const ensureEthereumNetwork = async () => {
   if (typeof window === "undefined" || !window.ethereum) return;
-  const targetChain = TARGET_CHAIN_ID.startsWith("0x") ? TARGET_CHAIN_ID : `0x${parseInt(TARGET_CHAIN_ID).toString(16)}`;
+  const targetChain = TARGET_CHAIN_ID;
 
   try {
     await window.ethereum.request({
@@ -76,15 +77,18 @@ export const ensureEthereumNetwork = async () => {
     });
   } catch (switchError: any) {
     if (switchError.code === 4902 || switchError.data?.originalError?.code === 4902) {
-      const config = CHAIN_CONFIGS[targetChain] || SEPOLIA_CONFIG;
+      const config = CHAIN_CONFIGS[targetChain];
+      if (!config) throw new Error(`Unsupported network: ${targetChain}`);
       try {
         await window.ethereum.request({
           method: "wallet_addEthereumChain",
           params: [config],
         });
       } catch (addError) {
-        console.error("Failed to add Ethereum network to wallet:", addError);
+        throw addError;
       }
+    } else {
+      throw switchError;
     }
   }
 };
@@ -113,8 +117,8 @@ const Web3Context = createContext<Web3ContextType>({
   provider: null,
   signer: null,
   taskManager: null,
-  networkName: "Sepolia",
-  currencySymbol: "SepoliaETH",
+  networkName: TARGET_CHAIN_CONFIG.chainName,
+  currencySymbol: TARGET_CHAIN_CONFIG.nativeCurrency.symbol,
   connectWallet: async () => {},
   disconnectWallet: () => {},
   isConnecting: false,
@@ -131,8 +135,8 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
   const [taskManager, setTaskManager] = useState<ethers.Contract | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [networkName, setNetworkName] = useState<string>("Sepolia");
-  const [currencySymbol, setCurrencySymbol] = useState<string>("SepoliaETH");
+  const [networkName, setNetworkName] = useState<string>(TARGET_CHAIN_CONFIG.chainName);
+  const [currencySymbol, setCurrencySymbol] = useState<string>(TARGET_CHAIN_CONFIG.nativeCurrency.symbol);
 
   const fetchBalance = async (addr: string, prov: ethers.BrowserProvider) => {
     try {
@@ -199,7 +203,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
 
   const connectWallet = async () => {
     if (!window.ethereum) {
-      alert("Please install MetaMask or an Ethereum Web3 wallet!");
+      alert("Please install MetaMask or an EVM-compatible Web3 wallet!");
       return;
     }
     

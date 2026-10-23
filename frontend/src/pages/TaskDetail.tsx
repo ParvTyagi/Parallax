@@ -36,7 +36,7 @@ const STATE_BADGE: Record<string, { label: string; cls: string }> = {
 const TaskDetail = () => {
   const { taskId } = useParams<{ taskId: string }>();
   const { account, taskManager, connectWallet, currencySymbol, networkName } = useWeb3();
-  const currency = currencySymbol || "ETH";
+  const currency = currencySymbol || "MON";
   const [task, setTask] = useState<any>(null);
   const taskEscrowAddress = ESCROW_ADDRESS;
   const taskContractAddress = TASK_MANAGER_ADDRESS;
@@ -159,7 +159,7 @@ const TaskDetail = () => {
       const submissionData = await submissionRes.json();
       if (!submissionRes.ok) throw new Error(submissionData.error || "Could not save submission");
 
-      setMsg(subtaskId, "Recording submission proof on Ethereum…");
+      setMsg(subtaskId, "Recording submission proof on Monad testnet…");
       const tx = await taskManager.recordSubmissionProof(
         taskId,
         subtaskId,
@@ -203,7 +203,7 @@ const TaskDetail = () => {
     }
     setForfeitingId(subtaskId);
     try {
-      setMsg(subtaskId, "Confirming forfeit on Ethereum…");
+      setMsg(subtaskId, "Confirming forfeit on Monad testnet…");
       const tx = await taskManager.forfeitClaim(taskId, subtaskId);
       setMsg(subtaskId, "Transaction submitted! Waiting for confirmation…");
       await tx.wait();
@@ -241,7 +241,7 @@ const TaskDetail = () => {
     }
     setDisputingId(subtaskId);
     try {
-      setMsg(subtaskId, "Raising dispute on Ethereum…");
+      setMsg(subtaskId, "Raising dispute on Monad testnet…");
       const tx = await taskManager.disputeTask(taskId, subtaskId);
       await tx.wait();
       setMsg(subtaskId, "Dispute raised. Your request is awaiting administrator review.");
@@ -416,7 +416,7 @@ const TaskDetail = () => {
       </section>
 
       <details className="project-disclosure project-records">
-        <summary>Transaction records<span className="project-network">{networkName || "Ethereum"}</span><ChevronDown size={18} aria-hidden="true" /></summary>
+        <summary>Transaction records<span className="project-network">{networkName || "Monad Testnet"}</span><ChevronDown size={18} aria-hidden="true" /></summary>
         <div className="project-disclosure-body"><div className="project-record-link"><span>{task.txHash ? "Project creation" : "Task manager contract"}</span><a href={task.txHash ? `${BLOCK_EXPLORER_URL}/tx/${task.txHash}` : `${BLOCK_EXPLORER_URL}/address/${taskContractAddress}`} target="_blank" rel="noreferrer">View on explorer<ExternalLink size={14} aria-hidden="true" /></a></div><div className="project-record-link"><span>Escrow contract</span><a href={`${BLOCK_EXPLORER_URL}/address/${taskEscrowAddress}`} target="_blank" rel="noreferrer">View on explorer<ExternalLink size={14} aria-hidden="true" /></a></div></div>
       </details>
       <p className="project-help">Approval releases the reward and returns the claim bond. <Link to="/security">How verification works<ExternalLink size={13} aria-hidden="true" /></Link></p>

@@ -5,16 +5,16 @@ export const API_URL =
     : "http://localhost:3000");
 
 export const TASK_MANAGER_ADDRESS =
-  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0xF5C1243881729C16882EA7bbE0a1846e12553EfA";
+  import.meta.env.VITE_TASKMANAGER_ADDRESS || "0x0D58FF42140f9027F340FD1D3A217aa7b2Eb72a4";
 
 export const ESCROW_ADDRESS =
-  import.meta.env.VITE_ESCROW_ADDRESS || "0xdF16FC24b9b137B3bB25F2b7A659b1B068bE834e";
+  import.meta.env.VITE_ESCROW_ADDRESS || "0x53fF023e1974b186BE6bB84ea20297De15833cfa";
 
 export const BLOCK_EXPLORER_URL =
-  import.meta.env.VITE_BLOCK_EXPLORER_URL || "https://sepolia.etherscan.io";
+  import.meta.env.VITE_BLOCK_EXPLORER_URL || "https://testnet.monadexplorer.com";
 
 export const ETH_CHAIN_ID =
-  import.meta.env.VITE_ETH_CHAIN_ID || import.meta.env.VITE_MONAD_CHAIN_ID || "0xaa36a7";
+  import.meta.env.VITE_MONAD_CHAIN_ID || import.meta.env.VITE_ETH_CHAIN_ID || "0x279f";
 
 export const TASK_MANAGER_ABI = [
   {

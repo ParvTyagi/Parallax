@@ -69,7 +69,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
               </span>
-              <span>{networkName || "Ethereum Sepolia"}</span>
+              <span>{networkName || "Monad Testnet"}</span>
             </div>
 
             {/* Wallet Balance & Account Button */}
@@ -81,7 +81,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   {balance !== null && (
                     <span className="text-xs font-mono font-bold text-base-content border-r border-base-300 pr-2.5">
-                      {balance} {currencySymbol || "ETH"}
+                      {balance} {currencySymbol || "MON"}
                     </span>
                   )}
                   <div className="w-5 h-5 rounded-full bg-indigo-100 border border-indigo-200 shrink-0" />

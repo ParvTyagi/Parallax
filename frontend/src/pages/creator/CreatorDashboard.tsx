@@ -50,7 +50,7 @@ export default function CreatorDashboard() {
   const filtered = useMemo(() => tasks.filter(t =>
     taskHeadlineText(t).toLowerCase().includes(query.toLowerCase()) &&
     (filter === "All projects" || statusOf(t) === filter)), [tasks, query, filter]);
-  const currency = currencySymbol || "ETH";
+  const currency = currencySymbol || "MON";
   return (
     <div className="overview-page">
       <div className="overview-heading">

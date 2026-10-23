@@ -1,4 +1,4 @@
-// Resumable Sepolia deployment; configuration cutover is a separate step.
+// Resumable Monad testnet upgrade; activate only after bytecode and settings verification.
 const fs = require("fs");
 const path = require("path");
 const { ethers } = require("ethers");
@@ -8,19 +8,19 @@ const root = path.resolve(__dirname, "../..");
 const backend = dotenv.parse(fs.readFileSync(path.join(root, "backend/.env")));
 const deploymentEnv = dotenv.parse(fs.readFileSync(path.join(root, "contracts/.env")));
 const artifact = JSON.parse(fs.readFileSync(path.join(root, "contracts/artifacts/contracts/ParallaxTaskManager.sol/ParallaxTaskManager.json")));
-const recordPath = path.join(root, "contracts/deployments/immediate-payout-sepolia.json");
+const recordPath = path.join(root, "contracts/deployments/immediate-payout-monad-testnet.json");
 
 async function main() {
-  const rpc = deploymentEnv.SEPOLIA_RPC_URL || deploymentEnv.ETH_RPC_URL || backend.ETH_RPC_URL;
-  const provider = new ethers.JsonRpcProvider(rpc);
+  const rpc = deploymentEnv.MONAD_RPC_URL || "https://testnet-rpc.monad.xyz";
+  const provider = new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 });
   try {
     const network = await provider.getNetwork();
-    if (network.chainId !== 11155111n) throw new Error("Deployment is restricted to Sepolia.");
+    if (network.chainId !== 10143n) throw new Error("Deployment is restricted to Monad testnet.");
     const key = deploymentEnv.DEPLOYER_PRIVATE_KEY;
     if (!key) throw new Error("DEPLOYER_PRIVATE_KEY is missing");
     const signer = new ethers.Wallet(key.startsWith("0x") ? key : "0x" + key, provider);
     let record = fs.existsSync(recordPath) ? JSON.parse(fs.readFileSync(recordPath)) : null;
-    const oldAddress = record?.previousTaskManagerAddress || backend.TASKMANAGER_ADDRESS;
+    const oldAddress = record?.previousTaskManagerAddress || "0x7371e2777cD7Cbf9d3bE33F780122C1C9C9A4F20";
     const old = new ethers.Contract(oldAddress, artifact.abi, provider);
     const [orchestratorAddress, platformTreasury, adminAddress, bondAmount, oldEscrow] = await Promise.all([
       old.orchestrator(), old.platformTreasury(), old.admin(), old.workerBondAmount(), old.escrow()
@@ -39,20 +39,19 @@ async function main() {
       const estimatedGas = await signer.estimateGas(request);
       const populated = await signer.populateTransaction({ ...request, nonce: pending, gasLimit: estimatedGas * 120n / 100n });
       const maxCost = populated.gasLimit * (populated.maxFeePerGas || populated.gasPrice);
-      if (await provider.getBalance(signer.address) < maxCost) throw new Error("Insufficient Sepolia ETH for deployment.");
+      if (await provider.getBalance(signer.address) < maxCost) throw new Error("Insufficient testnet MON for deployment.");
       const signed = await signer.signTransaction(populated);
       record = {
-        network: "sepolia", chainId: 11155111, state: "submitted",
+        network: "monadTestnet", chainId: 10143, state: "submitted",
         taskManagerAddress: ethers.getCreateAddress({ from: signer.address, nonce: pending }),
         deploymentTxHash: ethers.keccak256(signed), deployerAddress: signer.address,
         previousTaskManagerAddress: oldAddress, previousEscrowAddress: oldEscrow,
-        previousStartBlock: Number(backend.CHAIN_START_BLOCK || 0),
         orchestratorAddress, platformTreasury, adminAddress,
         workerBondAmount: bondAmount.toString(), platformFeePercentage: oldFee.toString(),
-        maxDeploymentCostETH: ethers.formatEther(maxCost)
+        maxDeploymentCostMON: ethers.formatEther(maxCost)
       };
       fs.writeFileSync(recordPath, JSON.stringify(record, null, 2));
-      console.log(JSON.stringify({ action: "broadcast", address: record.taskManagerAddress, txHash: record.deploymentTxHash, maxCostETH: record.maxDeploymentCostETH }));
+      console.log(JSON.stringify({ action: "broadcast", address: record.taskManagerAddress, txHash: record.deploymentTxHash, maxCostMON: record.maxDeploymentCostMON }));
       await provider.broadcastTransaction(signed);
     }
     const receipt = await provider.waitForTransaction(record.deploymentTxHash, 1, 120000);
@@ -83,9 +82,10 @@ async function main() {
       state: "verified", escrowAddress, startBlock: receipt.blockNumber,
       deployedAt: new Date().toISOString(),
       deploymentGasUsed: receipt.gasUsed.toString(),
-      deploymentCostETH: ethers.formatEther(receipt.gasUsed * receipt.gasPrice)
+      deploymentCostMON: ethers.formatEther(receipt.gasUsed * receipt.gasPrice)
     });
     fs.writeFileSync(recordPath, JSON.stringify(record, null, 2));
+    require("./configure-deployment.cjs").configureDeployment(record);
     console.log(JSON.stringify(record, null, 2));
   } finally {
     provider.destroy();

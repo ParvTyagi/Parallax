@@ -17,7 +17,7 @@ import { subtaskHeadline } from "../components/task/SubtaskSpec";
 
 const WorkerTasks = () => {
   const { account, connectWallet, currencySymbol } = useWeb3();
-  const currency = currencySymbol || "ETH";
+  const currency = currencySymbol || "MON";
   const [subtasks, setSubtasks] = useState<any[]>([]);
   const [myTasks, setMyTasks] = useState<any[]>([]);
   const [profile, setProfile] = useState<any>(null);

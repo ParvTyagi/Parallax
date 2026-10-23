@@ -1,0 +1,21 @@
+{
+  "network": "monadTestnet",
+  "chainId": 10143,
+  "state": "verified",
+  "taskManagerAddress": "0x0D58FF42140f9027F340FD1D3A217aa7b2Eb72a4",
+  "deploymentTxHash": "0x69e21d93e62d52896f05ac49a2195b9de8c1b4b9941d9007140ee01b33188113",
+  "deployerAddress": "0xf302D2f179baf42d6F02E337B25Cf882499b39e6",
+  "previousTaskManagerAddress": "0x7371e2777cD7Cbf9d3bE33F780122C1C9C9A4F20",
+  "previousEscrowAddress": "0x5e70Ae4fdB3301693606e9D1ef1a92721896EED9",
+  "orchestratorAddress": "0xf302D2f179baf42d6F02E337B25Cf882499b39e6",
+  "platformTreasury": "0xf302D2f179baf42d6F02E337B25Cf882499b39e6",
+  "adminAddress": "0xf302D2f179baf42d6F02E337B25Cf882499b39e6",
+  "workerBondAmount": "10000000000000000",
+  "platformFeePercentage": "5",
+  "maxDeploymentCostMON": "0.763362848",
+  "escrowAddress": "0x53fF023e1974b186BE6bB84ea20297De15833cfa",
+  "startBlock": 73607457,
+  "deployedAt": "2026-10-23T19:03:40.981Z",
+  "deploymentGasUsed": "3779024",
+  "deploymentCostMON": "0.385460448"
+}

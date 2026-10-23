@@ -23,7 +23,7 @@ export default function MobileNav() {
         <div className="mobile-navigation-heading"><Dialog.Title><ParallaxLogo /></Dialog.Title><Dialog.Close asChild><button className="btn btn-ghost btn-square" aria-label="Close navigation"><X size={22} /></button></Dialog.Close></div>
         <p id="navigation-description" className="sr-only">Navigate your projects, contributions, and account.</p>
         <WorkspaceLinks onNavigate={() => setOpen(false)} />
-        <div className="mobile-account"><p className="eyebrow">{networkName || "Ethereum Sepolia"}</p>{account ? <><p className="font-mono break-all">{account}</p><strong>{balance ?? "—"} {currencySymbol || "ETH"}</strong><button className="btn btn-outline w-full mt-4" onClick={() => { disconnectWallet(); setOpen(false); }}><LogOut size={16} />Disconnect wallet</button></> : <button onClick={connectWallet} disabled={isConnecting} className="btn btn-primary w-full mt-3">{isConnecting ? "Connecting…" : "Connect wallet"}</button>}</div>
+        <div className="mobile-account"><p className="eyebrow">{networkName || "Monad Testnet"}</p>{account ? <><p className="font-mono break-all">{account}</p><strong>{balance ?? "—"} {currencySymbol || "MON"}</strong><button className="btn btn-outline w-full mt-4" onClick={() => { disconnectWallet(); setOpen(false); }}><LogOut size={16} />Disconnect wallet</button></> : <button onClick={connectWallet} disabled={isConnecting} className="btn btn-primary w-full mt-3">{isConnecting ? "Connecting…" : "Connect wallet"}</button>}</div>
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>;

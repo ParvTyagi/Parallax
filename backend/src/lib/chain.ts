@@ -28,10 +28,10 @@ const POLL_INTERVAL_MS = Number(process.env.CHAIN_POLL_INTERVAL_MS || 5000);
 
 function getProvider() {
   const rpcUrl =
-    process.env.ETH_RPC_URL ||
-    process.env.ETHEREUM_RPC_URL ||
+    process.env.MONAD_RPC_URL ||
     process.env.RPC_URL ||
-    process.env.MONAD_RPC_URL;
+    process.env.ETH_RPC_URL ||
+    process.env.ETHEREUM_RPC_URL;
   if (!rpcUrl) return null;
   return new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
 }
@@ -132,7 +132,7 @@ export async function applyEvent(
 
     case "TaskCancelled": {
       const [taskId, , refundedAmount] = args;
-      console.log(`Event TaskCancelled: ${taskId}, refunded: ${ethers.formatEther(refundedAmount)} ETH`);
+      console.log(`Event TaskCancelled: ${taskId}, refunded: ${ethers.formatEther(refundedAmount)} MON`);
       await prisma.task.updateMany({ where: { taskId: taskIdFilter(taskId) }, data: { status: "CANCELLED" } });
       await prisma.subtask.updateMany({
         where: { taskId: taskIdFilter(taskId), state: "CREATED" },
@@ -178,7 +178,7 @@ export async function applyEvent(
 
     case "SubtaskClaimed": {
       const [, subtaskId, worker, bondAmount] = args;
-      console.log(`Event SubtaskClaimed: ${subtaskId} by ${worker} (bond: ${ethers.formatEther(bondAmount)} ETH)`);
+      console.log(`Event SubtaskClaimed: ${subtaskId} by ${worker} (bond: ${ethers.formatEther(bondAmount)} MON)`);
       await prisma.subtask.updateMany({
         where: { subtaskId: subtaskIdFilter(subtaskId) },
         data: { state: "CLAIMED", worker, bondAmount: ethers.formatEther(bondAmount) }
@@ -327,7 +327,7 @@ export async function syncTransaction(txHash: string): Promise<{ indexed: number
   const provider = getProvider();
   const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
   if (!provider || !taskManagerAddress) {
-    throw new Error("Chain sync unavailable: ETH_RPC_URL (or RPC_URL/MONAD_RPC_URL) or TASKMANAGER_ADDRESS missing");
+    throw new Error("Chain sync unavailable: MONAD_RPC_URL (or RPC_URL/ETH_RPC_URL) or TASKMANAGER_ADDRESS missing");
   }
 
   const receipt = await provider.getTransactionReceipt(txHash);
@@ -386,7 +386,7 @@ export async function setupChainListeners() {
   const taskManagerAddress = process.env.TASKMANAGER_ADDRESS;
 
   if (!provider || !taskManagerAddress) {
-    console.warn("Chain listeners skipped: ETH_RPC_URL (or RPC_URL/MONAD_RPC_URL) or TASKMANAGER_ADDRESS missing.");
+    console.warn("Chain listeners skipped: MONAD_RPC_URL (or RPC_URL/ETH_RPC_URL) or TASKMANAGER_ADDRESS missing.");
     return;
   }
 

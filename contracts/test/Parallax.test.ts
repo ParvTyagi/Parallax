@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { Signer } from "ethers";
 
-describe("Parallax Contracts on Ethereum", function () {
+describe("Parallax Contracts on Monad-compatible EVM", function () {
   let escrow: any;
   let taskManager: any;
   let owner: Signer;

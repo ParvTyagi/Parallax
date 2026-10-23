@@ -77,7 +77,7 @@ export function ReviewSubtasksModal({
   onCancel,
 }: ReviewSubtasksModalProps) {
   const { currencySymbol } = useWeb3();
-  const currency = currencySymbol || "ETH";
+  const currency = currencySymbol || "MON";
   const [rows, setRows] = useState<DraftSubtask[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
