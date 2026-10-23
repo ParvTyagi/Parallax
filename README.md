@@ -232,3 +232,9 @@ The `ethereum` branch preserves the Ethereum/Sepolia application. `main` targets
 For hosted deployments, set `MONAD_RPC_URL=https://testnet-rpc.monad.xyz` and use `TASKMANAGER_ADDRESS`, `ESCROW_ADDRESS`, and `CHAIN_START_BLOCK` from `contracts/deployment.json` on the backend. Set `VITE_MONAD_CHAIN_ID=0x279f`, `VITE_BLOCK_EXPLORER_URL=https://testnet.monadexplorer.com`, `VITE_TASKMANAGER_ADDRESS`, and `VITE_ESCROW_ADDRESS` on the frontend, then rebuild and restart both services. Remove stale Ethereum overrides. `ORCHESTRATOR_PRIVATE_KEY` must belong to the recorded orchestrator.
 
 `npm run deploy:monad` creates a fresh contract and activates its verified deployment locally. `npm run deploy:immediate` resumes the recorded upgrade from the previous Monad contract while preserving its admin, treasury, orchestrator, fee, and worker bond. Neither command moves old escrow balances.
+
+### Render backend build
+
+Use root directory `backend`, build command `npm ci --include=dev && npm run build`, and start command `npm start`.
+Both installation and build regenerate Prisma Client from `prisma/schema.prisma`, so a cached client cannot omit newer models such as `ChainCursor`.
+Client generation does not change the database schema. If the database itself is missing tables or columns, review and apply the schema changes separately with `npm run db:push`; do not use `--accept-data-loss` or reset the database to resolve a stale client.
