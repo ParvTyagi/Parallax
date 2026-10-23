@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "latest",
-    "@prisma/client": "^6.0.0",
+    "@prisma/client": "^7.10.1",
     "@types/multer": "^2.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
