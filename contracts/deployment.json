@@ -17,5 +17,6 @@
   "startBlock": 73607457,
   "deployedAt": "2026-10-23T19:03:40.981Z",
   "deploymentGasUsed": "3779024",
-  "deploymentCostMON": "0.385460448"
+  "deploymentCostMON": "0.385460448",
+  "runtimeBytecodeHash": "0x0735018384f6dfc5b995d7b745bcc7eb3b37ead400212d3c4c9484dffa1eb1e2"
 }

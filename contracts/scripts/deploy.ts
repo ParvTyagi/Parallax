@@ -1,10 +1,15 @@
-import { ethers } from "hardhat";
 import hre from "hardhat";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import fs from "fs";
 import path from "path";
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { configureDeployment } = require("./configure-deployment.cjs");
 
 async function main() {
+  const connection = await hre.network.create();
+  const { ethers } = connection;
   const [deployer] = await ethers.getSigners();
   if (!deployer) throw new Error("DEPLOYER_PRIVATE_KEY is required");
   const network = await ethers.provider.getNetwork();
@@ -18,21 +23,22 @@ async function main() {
   for (const address of [orchestratorAddress, platformTreasury, adminAddress]) {
     if (!ethers.isAddress(address) || address === ethers.ZeroAddress) throw new Error("Invalid deployment role address");
   }
-  console.log(`Deploying to ${hre.network.name} (${network.chainId}) from ${deployerAddress}`);
+  console.log(`Deploying to ${connection.networkName} (${network.chainId}) from ${deployerAddress}`);
+  const artifact = await hre.artifacts.readArtifact("ParallaxTaskManager");
   const factory = await ethers.getContractFactory("ParallaxTaskManager");
   const taskManager = await factory.deploy(orchestratorAddress, platformTreasury, adminAddress);
   const tx = taskManager.deploymentTransaction()!;
   const record = {
-    network: hre.network.name, chainId: Number(network.chainId), state: "submitted",
+    network: connection.networkName, chainId: Number(network.chainId), state: "submitted",
     taskManagerAddress: await taskManager.getAddress(), deploymentTxHash: tx.hash,
+    runtimeBytecodeHash: ethers.keccak256(artifact.deployedBytecode),
     deployerAddress, orchestratorAddress, platformTreasury, adminAddress,
   };
-  const recordPath = path.join(__dirname, `../deployments/${hre.network.name}-${tx.hash}.json`);
+  const recordPath = path.join(__dirname, `../deployments/${connection.networkName}-${tx.hash}.json`);
   fs.mkdirSync(path.dirname(recordPath), { recursive: true });
   fs.writeFileSync(recordPath, JSON.stringify(record, null, 2) + "\n");
   const receipt = await tx.wait();
   if (!receipt || receipt.status !== 1) throw new Error("Deployment failed; inspect the saved transaction before retrying");
-  const artifact = await hre.artifacts.readArtifact("ParallaxTaskManager");
   if (ethers.keccak256(await ethers.provider.getCode(record.taskManagerAddress)) !== ethers.keccak256(artifact.deployedBytecode)) {
     throw new Error("Deployed bytecode differs from the compiled contract");
   }

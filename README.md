@@ -50,7 +50,7 @@ flowchart TD
 
 ## 🛠️ Tech Stack
 
-- **Blockchain & Smart Contracts:** Monad Testnet (EVM compatible), Solidity `^0.8.24`, Hardhat, Ethers.js v6
+- **Blockchain & Smart Contracts:** Monad Testnet (EVM compatible), Solidity `^0.8.24`, Hardhat 3, Ethers.js v6
 - **Backend Service:** Node.js, TypeScript, Express, Prisma ORM, PostgreSQL, Google Gemini API
 - **Decentralized Storage:** IPFS (via Pinata / local in-memory fallback)
 - **Frontend Application:** React 19, TypeScript, Vite, Tailwind CSS, DaisyUI, Lucide Icons
@@ -61,7 +61,7 @@ flowchart TD
 ## 💻 Getting Started (Local Development & Demo)
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v18+ or v20+)
+- [Node.js](https://nodejs.org/) (v22.13+; Node 24 LTS recommended)
 - [Git](https://git-scm.com/)
 - [MetaMask](https://metamask.io/) browser extension
 - PostgreSQL database (Local PostgreSQL or a free [Neon](https://neon.tech) / [Supabase](https://supabase.com) instance)
@@ -238,3 +238,13 @@ For hosted deployments, set `MONAD_RPC_URL=https://testnet-rpc.monad.xyz` and us
 Use root directory `backend`, build command `npm ci --include=dev && npm run build`, and start command `npm start`.
 Both installation and build regenerate Prisma Client from `prisma/schema.prisma`, so a cached client cannot omit newer models such as `ChainCursor`.
 Client generation does not change the database schema. If the database itself is missing tables or columns, review and apply the schema changes separately with `npm run db:push`; do not use `--accept-data-loss` or reset the database to resolve a stale client.
+
+### Dependency security maintenance
+
+Run `npm audit` in `backend`, `frontend`, and `contracts`. Dependabot checks all three lockfiles.
+The backend uses patched Zod 4 and overrides Prisma 6's `deepmerge-ts` dependency to version 8 to address recursive-merge resource exhaustion while retaining the existing Prisma client and database setup.
+The contracts use Hardhat 3 with only the Ethers, Mocha, and Chai plugins needed by this project; Node.js 22.13 or newer is required.
+
+Known upstream limitation: Hardhat and its configuration validator still require Zod 3.25.76. [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) includes this version, although npm audit currently does not report it. The [Zod 3 issue](https://github.com/colinhacks/zod/issues/6653) has no published compatible fix. This dependency belongs to local contract tooling, not the deployed backend. Keep local RPC nodes private and use trusted Hardhat configuration; update the toolchain when upstream supports patched Zod. Do not dismiss the alert or override it with an incompatible Zod major version.
+
+Deployment records retain the exact verified runtime bytecode hash, so rechecking an existing deployment remains valid when a tooling upgrade changes compiler metadata. No contract redeployment is needed for dependency-only updates.

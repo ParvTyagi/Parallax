@@ -45,6 +45,7 @@ async function main() {
         network: "monadTestnet", chainId: 10143, state: "submitted",
         taskManagerAddress: ethers.getCreateAddress({ from: signer.address, nonce: pending }),
         deploymentTxHash: ethers.keccak256(signed), deployerAddress: signer.address,
+        runtimeBytecodeHash: ethers.keccak256(artifact.deployedBytecode),
         previousTaskManagerAddress: oldAddress, previousEscrowAddress: oldEscrow,
         orchestratorAddress, platformTreasury, adminAddress,
         workerBondAmount: bondAmount.toString(), platformFeePercentage: oldFee.toString(),
@@ -59,7 +60,9 @@ async function main() {
     if (receipt.contractAddress?.toLowerCase() !== record.taskManagerAddress.toLowerCase()) throw new Error("Unexpected deployment address.");
     const deployed = new ethers.Contract(record.taskManagerAddress, artifact.abi, signer);
     const bytecode = await provider.getCode(record.taskManagerAddress);
-    if (ethers.keccak256(bytecode) !== ethers.keccak256(artifact.deployedBytecode)) throw new Error("Deployed bytecode does not match the tested artifact.");
+    // Preserve the verified artifact hash across compiler/tooling metadata changes.
+    const expectedBytecodeHash = record.runtimeBytecodeHash || ethers.keccak256(artifact.deployedBytecode);
+    if (ethers.keccak256(bytecode) !== expectedBytecodeHash) throw new Error("Deployed bytecode does not match the recorded artifact.");
     if (await deployed.workerBondAmount() !== bondAmount) {
       if (signer.address.toLowerCase() !== adminAddress.toLowerCase()) throw new Error("Admin must set the preserved worker bond.");
       await (await deployed.setWorkerBondAmount(bondAmount)).wait();

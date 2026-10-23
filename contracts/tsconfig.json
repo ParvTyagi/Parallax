@@ -1,10 +1,17 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "commonjs",
+    "target": "es2022",
+    "module": "NodeNext",
     "strict": true,
     "esModuleInterop": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "moduleResolution": "NodeNext",
+    "skipLibCheck": true,
+    "noEmit": true
   },
-  "include": ["test/**/*.ts", "scripts/**/*.ts", "hardhat.config.ts"]
+  "include": [
+    "test/**/*.ts",
+    "scripts/**/*.ts",
+    "hardhat.config.ts"
+  ]
 }

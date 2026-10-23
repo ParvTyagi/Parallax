@@ -1,6 +1,7 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
-import { Signer } from "ethers";
+import { network } from "hardhat";
+const { ethers } = await network.create("hardhat");
+import type { Signer } from "ethers";
 
 describe("Parallax Contracts on Monad-compatible EVM", function () {
   let escrow: any;
@@ -280,7 +281,7 @@ describe("Parallax Contracts on Monad-compatible EVM", function () {
       const custBefore = await ethers.provider.getBalance(await customer.getAddress());
       const tx = await taskManager.connect(customer).cancelTask(taskId);
       const receipt = await tx.wait();
-      const gasSpent = receipt.gasUsed * receipt.gasPrice;
+      const gasSpent = BigInt(receipt.gasUsed) * BigInt(receipt.gasPrice);
 
       const custAfter = await ethers.provider.getBalance(await customer.getAddress());
       expect(custAfter + gasSpent - custBefore).to.equal(reward * 2n);
@@ -302,7 +303,7 @@ describe("Parallax Contracts on Monad-compatible EVM", function () {
       const custBefore = await ethers.provider.getBalance(await customer.getAddress());
       const tx = await taskManager.connect(customer).cancelTask(taskId);
       const receipt = await tx.wait();
-      const gasSpent = receipt.gasUsed * receipt.gasPrice;
+      const gasSpent = BigInt(receipt.gasUsed) * BigInt(receipt.gasPrice);
 
       const custAfter = await ethers.provider.getBalance(await customer.getAddress());
       // Only subtask 2's reward is refunded!
