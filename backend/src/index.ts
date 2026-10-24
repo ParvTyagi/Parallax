@@ -6,6 +6,9 @@ import { setupChainListeners } from "./lib/chain";
 dotenv.config();
 
 const app = express();
+// Render's public ingress is the nearest trusted proxy. Keep direct/local
+// deployments untrusted; never trust the entire forwarded address chain.
+app.set("trust proxy", process.env.RENDER === "true" ? 1 : false);
 app.use(cors());
 app.use(express.json());
 
